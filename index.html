@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PocketMass 3D">
+<title>PocketMass 3D — Touch CAD & Warehouse Modeler</title>
+
+<!-- Three.js Core & Official Loaders/Exporters -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+
+<style>
+  :root {
+    --bg-dark: rgba(18, 22, 28, 0.88);
+    --panel-border: rgba(255, 255, 255, 0.14);
+    --accent: #00e5ff;
+    --accent-warm: #ffb300;
+    --axis-x: #ff3b30;
+    --axis-y: #34c759;
+    --axis-z: #007aff;
+    --text-main: #f5f7fa;
+    --text-muted: #9aa5b1;
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #101419;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    color: var(--text-main);
+    touch-action: none;
+  }
+
+  #canvas-container {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  /* Top Compact Status & Quick Actions Bar */
+  .top-bar {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .pill-group {
+    display: flex;
+    gap: 6px;
+    background: var(--bg-dark);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--panel-border);
+    border-radius: 20px;
+    padding: 5px 8px;
+    pointer-events: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  .top-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .top-btn:active, .top-btn.active {
+    background: rgba(0, 229, 255, 0.2);
+    color: var(--accent);
+  }
+
+  /* Offset Precision Reticle (Prevents Fat-Finger Occlusion) */
+  #reticle {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    margin-left: -22px;
+    margin-top: -22px;
+    pointer-events: none;
+    z-index: 25;
+    display: none;
+  }
+  #reticle::before, #reticle::after {
+    content: '';
+    position: absolute;
+    background: var(--accent);
+    box-shadow: 0 0 6px rgba(0, 229, 255, 0.9);
+  }
+  #reticle::before { top: 21px; left: 0; right: 0; height: 2px; }
+  #reticle::after { left: 21px; top: 0; bottom: 0; width: 2px; }
+  .reticle-ring {
+    position: absolute;
+    inset: 8px;
+    border: 2px solid var(--accent-warm);
+    border-radius: 50%;
+  }
+
+  /* Live Architectural Dimension HUD & Tap-to-Key Input */
+  .hud-bar {
+    position: absolute;
+    bottom: calc(94px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .dim-badge {
+    background: var(--bg-dark);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(0, 229, 255, 0.4);
+    border-radius: 16px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: var(--accent);
+    pointer-events: auto;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dim-badge span.hint {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  /* Context Transform Bar (Appears when an object is selected) */
+  #context-bar {
+    position: absolute;
+    bottom: calc(142px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-dark);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 6px 10px;
+    display: none;
+    gap: 6px;
+    align-items: center;
+    z-index: 12;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    white-space: nowrap;
+  }
+
+  .ctx-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-main);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .ctx-btn:active { background: var(--accent); color: #000; }
+  .ctx-btn.danger { color: #ff6b6b; border-color: rgba(255,107,107,0.3); }
+
+  /* Ergonomic Bottom Thumb Dock */
+  .bottom-dock {
+    position: absolute;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    height: 70px;
+    background: var(--bg-dark);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    padding: 6px;
+    z-index: 15;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+  }
+
+  .tool-btn {
+    background: transparent;
+    border: none;
+    border-radius: 18px;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .tool-btn svg {
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+    stroke-width: 2;
+    fill: none;
+  }
+
+  .tool-btn.active {
+    background: linear-gradient(135deg, rgba(0, 229, 255, 0.22), rgba(0, 122, 255, 0.22));
+    color: var(--accent);
+    border: 1px solid rgba(0, 229, 255, 0.45);
+    transform: translateY(-2px);
+  }
+
+  /* Slide-Up Drawers (3D Warehouse & Materials) */
+  .drawer {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    background: rgba(20, 25, 33, 0.96);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    padding: 18px;
+    z-index: 30;
+    display: none;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.65);
+    max-height: 68vh;
+    overflow-y: auto;
+  }
+
+  .drawer.open { display: block; }
+
+  .drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .drawer-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .close-btn {
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    font-weight: 700;
+  }
+
+  .wh-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .wh-card h4 { margin: 0 0 6px 0; font-size: 14px; color: var(--accent); }
+  .wh-card p { margin: 0 0 12px 0; font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+
+  .primary-action-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    border: none;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .btn-cyan { background: var(--accent); color: #06151f; }
+  .btn-amber { background: var(--accent-warm); color: #1f1400; }
+  .btn-outline {
+    background: rgba(255,255,255,0.07);
+    color: var(--text-main);
+    border: 1px solid rgba(255,255,255,0.18);
+  }
+
+  .asset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .asset-item {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 10px 6px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: pointer;
+  }
+  .asset-item:active { border-color: var(--accent); background: rgba(0,229,255,0.15); }
+
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .swatch {
+    border-radius: 12px;
+    height: 52px;
+    display: flex;
+    align-items: flex-end;
+    padding: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    border: 2px solid transparent;
+    cursor: pointer;
+  }
+  .swatch.active { border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<!-- Offset Precision Reticle -->
+<div id="reticle"><div class="reticle-ring"></div></div>
+
+<!-- Top Utility Bar -->
+<div class="top-bar">
+  <div class="pill-group">
+    <button class="top-btn" id="btn-undo" title="Undo">↶ Undo</button>
+    <button class="top-btn" id="btn-snap">Snap: 0.25m</button>
+    <button class="top-btn" id="btn-view">Iso</button>
+  </div>
+  <div class="pill-group">
+    <button class="top-btn" id="btn-sun">☀ Shadows</button>
+    <button class="top-btn" id="btn-export">⤓ Export</button>
+  </div>
+</div>
+
+<!-- Context Bar for Selected Object -->
+<div id="context-bar">
+  <button class="ctx-btn" id="ctx-rot">↻ 15°</button>
+  <button class="ctx-btn" id="ctx-scale-down">Scale −</button>
+  <button class="ctx-btn" id="ctx-scale-up">Scale +</button>
+  <button class="ctx-btn" id="ctx-dup">Duplicate</button>
+  <button class="ctx-btn danger" id="ctx-del">Delete</button>
+</div>
+
+<!-- Live Dimension & Prompt HUD -->
+<div class="hud-bar">
+  <div class="dim-badge" id="dim-hud" title="Tap to type exact dimensions">
+    <span id="hud-text">Ready • Orbit or pick Rect to draw</span>
+    <span class="hint">✎ Key-in</span>
+  </div>
+</div>
+
+<!-- 3D Warehouse & File Import Drawer -->
+<div class="drawer" id="drawer-warehouse">
+  <div class="drawer-header">
+    <div class="drawer-title">3D Warehouse & File Import</div>
+    <button class="close-btn" onclick="closeDrawers()">✕</button>
+  </div>
+
+  <div class="wh-card">
+    <h4>Step 1: Browse Trimble 3D Warehouse</h4>
+    <p>Search any furniture, building, or component on 3D Warehouse. Tap the Download icon on any model and choose <strong>GLB (.glb)</strong> or <strong>Collada/OBJ</strong> to save it to your iPhone Files.</p>
+    <div style="display:flex; gap:6px; margin-bottom:8px;">
+      <input id="wh-search" type="text" placeholder="Search e.g. Corbusier chair, pergola, tree..." style="flex:1; border-radius:10px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.4); color:#fff; padding:10px; font-size:13px;">
+      <button class="ctx-btn" style="background:var(--accent); color:#000; padding:0 14px;" onclick="searchWarehouse()">Go ↗</button>
+    </div>
+  </div>
+
+  <div class="wh-card">
+    <h4>Step 2: Import into Scene (.GLB / .GLTF / .OBJ / .STL)</h4>
+    <p>Select any downloaded 3D file from your iPhone. PocketMass automatically normalizes its scale, adds crisp architectural edges, and drops it at ground level.</p>
+    <input type="file" id="file-input" accept=".glb,.gltf,.obj,.stl" style="display:none">
+    <button class="primary-action-btn btn-amber" onclick="document.getElementById('file-input').click()">
+      📁 Import 3D File from iPhone
+    </button>
+  </div>
+
+  <div class="wh-card" style="margin-bottom:0;">
+    <h4>Instant Architectural Context Kit</h4>
+    <p>Drop scale-calibrated procedural entourage straight onto your site:</p>
+    <div class="asset-grid">
+      <div class="asset-item" onclick="spawnEntourage('human')">🧍 Scale Figure (1.75m)</div>
+      <div class="asset-item" onclick="spawnEntourage('tree')">🌳 Site Tree (5.5m)</div>
+      <div class="asset-item" onclick="spawnEntourage('pergola')">🏛 Timber Pergola</div>
+      <div class="asset-item" onclick="spawnEntourage('stair')">🪜 Straight Stair</div>
+      <div class="asset-item" onclick="spawnEntourage('pitched')">🏠 Pitched Roof Mass</div>
+      <div class="asset-item" onclick="spawnEntourage('car')">🚗 EV Sedan (4.6m)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Architectural Materials Drawer -->
+<div class="drawer" id="drawer-materials">
+  <div class="drawer-header">
+    <div class="drawer-title">Architectural Materials</div>
+    <button class="close-btn" onclick="closeDrawers()">✕</button>
+  </div>
+  <p style="font-size:12px; color:var(--text-muted); margin-top:0;">Tap a swatch to apply to the selected massing or set as active material:</p>
+  <div class="swatch-grid" id="swatch-container"></div>
+</div>
+
+<!-- Bottom Thumb Dock -->
+<div class="bottom-dock">
+  <button class="tool-btn active" data-tool="orbit">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18"/></svg>
+    Orbit
+  </button>
+  <button class="tool-btn" data-tool="rect">
+    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
+    Footprint
+  </button>
+  <button class="tool-btn" data-tool="pushpull">
+    <svg viewBox="0 0 24 24"><path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 15l8 5 8-5"/><path d="M4 19l8 5 8-5"/></svg>
+    Push/Pull
+  </button>
+  <button class="tool-btn" data-tool="move">
+    <svg viewBox="0 0 24 24"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
+    Move
+  </button>
+  <button class="tool-btn" data-tool="materials">
+    <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+    Material
+  </button>
+  <button class="tool-btn" data-tool="warehouse">
+    <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+    Warehouse
+  </button>
+</div>
+
+<script>
+// ============================================================================
+// POCKETMASS 3D — CORE ARCHITECTURAL ENGINE
+// ============================================================================
+const container = document.getElementById('canvas-container');
+const reticle = document.getElementById('reticle');
+const hudText = document.getElementById('hud-text');
+const contextBar = document.getElementById('context-bar');
+
+let scene, camera, renderer, controls, sunLight;
+let groundPlane, gridHelper;
+let currentTool = 'orbit';
+let snapStep = 0.25; // meters
+const snapOptions = [0.1, 0.25, 0.5, 1.0];
+let snapIndex = 1;
+
+// Scene Objects & Undo Stack
+const objects = [];
+const undoStack = [];
+let selectedObject = null;
+
+// Architectural Materials Library
+const MATERIALS = [
+  { name: 'Stucco White', color: 0xf2f4f7, roughness: 0.75, metalness: 0.05, opacity: 1.0 },
+  { name: 'Board Concrete', color: 0x9aa0a6, roughness: 0.85, metalness: 0.1, opacity: 1.0 },
+  { name: 'Warm Cedar', color: 0xc88a56, roughness: 0.65, metalness: 0.05, opacity: 1.0 },
+  { name: 'Corten Steel', color: 0x9e472a, roughness: 0.5, metalness: 0.55, opacity: 1.0 },
+  { name: 'Arch Glass', color: 0x64d2ff, roughness: 0.1, metalness: 0.2, opacity: 0.45, transparent: true },
+  { name: 'Charcoal Zinc', color: 0x373d45, roughness: 0.4, metalness: 0.65, opacity: 1.0 },
+  { name: 'Terracotta', color: 0xd96b43, roughness: 0.7, metalness: 0.05, opacity: 1.0 },
+  { name: 'Site Landscape', color: 0x558b5e, roughness: 0.9, metalness: 0.0, opacity: 1.0 }
+];
+let activeMatIndex = 0;
+
+// Interaction States
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const RETICLE_OFFSET_Y = 45; // 45px above thumb for zero fat-finger occlusion
+
+let isDragging = false;
+let drawStartPoint = null;
+let previewMesh = null;
+let dragStartY = 0;
+let initialHeight = 0.2;
+let dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let moveOffset = new THREE.Vector3();
+let baseElevation = 0;
+
+init();
+animate();
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x12171f);
+  scene.fog = new THREE.FogExp2(0x12171f, 0.012);
+
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 500);
+  camera.position.set(14, 12, 16);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI / 2 - 0.01; // Stay above ground plane
+  controls.target.set(0, 1.5, 0);
+
+  // Lighting: Hemisphere + Architectural Sun with Soft Shadows
+  const hemiLight = new THREE.HemisphereLight(0xddeeff, 0x202830, 0.75);
+  scene.add(hemiLight);
+
+  sunLight = new THREE.DirectionalLight(0xfff6e5, 0.95);
+  sunLight.position.set(22, 36, 18);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.width = 2048;
+  sunLight.shadow.mapSize.height = 2048;
+  sunLight.shadow.camera.near = 0.5;
+  sunLight.shadow.camera.far = 120;
+  const d = 25;
+  sunLight.shadow.camera.left = -d;
+  sunLight.shadow.camera.right = d;
+  sunLight.shadow.camera.top = d;
+  sunLight.shadow.camera.bottom = -d;
+  sunLight.shadow.bias = -0.0005;
+  scene.add(sunLight);
+
+  // Ground Receiver & SketchUp-Style Colored Axes
+  const groundGeo = new THREE.PlaneGeometry(200, 200);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x161c24, roughness: 0.95, metalness: 0.02 });
+  groundPlane = new THREE.Mesh(groundGeo, groundMat);
+  groundPlane.rotation.x = -Math.PI / 2;
+  groundPlane.receiveShadow = true;
+  scene.add(groundPlane);
+
+  gridHelper = new THREE.GridHelper(60, 60, 0x2f3b4c, 0x202936);
+  gridHelper.position.y = 0.002;
+  scene.add(gridHelper);
+
+  buildSketchUpAxes();
+  buildMaterialSwatches();
+
+  // Starter Architectural Massing (So user can test Push/Pull immediately)
+  const starterSlab = createArchitecturalBox(6, 0.3, 4.5, new THREE.Vector3(0, 0, 0), 0);
+  const starterTower = createArchitecturalBox(3.5, 3.0, 3.5, new THREE.Vector3(-1.25, 0.3, -0.5), 2);
+  selectObject(starterTower);
+
+  // Touch & Pointer Listeners
+  const dom = renderer.domElement;
+  dom.addEventListener('pointerdown', onPointerDown);
+  dom.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('resize', onWindowResize);
+
+  setupUIEvents();
+}
+
+function buildSketchUpAxes() {
+  const axisLen = 30;
+  // Red X Axis
+  const xGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-axisLen, 0.01, 0), new THREE.Vector3(axisLen, 0.01, 0)]);
+  scene.add(new THREE.Line(xGeo, new THREE.LineBasicMaterial({ color: 0xff3b30 })));
+  // Green Z Axis (Ground depth)
+  const zGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.01, -axisLen), new THREE.Vector3(0, 0.01, axisLen)]);
+  scene.add(new THREE.Line(zGeo, new THREE.LineBasicMaterial({ color: 0x34c759 })));
+  // Blue Vertical Axis
+  const yGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, axisLen, 0)]);
+  scene.add(new THREE.Line(yGeo, new THREE.LineBasicMaterial({ color: 0x007aff })));
+}
+
+function createArchitecturalBox(w, h, d, pos, matIdx = activeMatIndex) {
+  const width = Math.max(0.1, w);
+  const height = Math.max(0.05, h);
+  const depth = Math.max(0.1, d);
+
+  const geo = new THREE.BoxGeometry(width, height, depth);
+  // Shift geometry origin to bottom center so Push/Pull grows cleanly upward
+  geo.translate(0, height / 2, 0);
+
+  const mSpec = MATERIALS[matIdx];
+  const mat = new THREE.MeshStandardMaterial({
+    color: mSpec.color,
+    roughness: mSpec.roughness,
+    metalness: mSpec.metalness,
+    transparent: !!mSpec.transparent,
+    opacity: mSpec.opacity
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(pos);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  mesh.userData = {
+    isArchVolume: true,
+    width: width,
+    height: height,
+    depth: depth,
+    matIndex: matIdx
+  };
+
+  updateEdgeHighlight(mesh, false);
+  scene.add(mesh);
+  objects.push(mesh);
+  undoStack.push({ action: 'add', mesh: mesh });
+  return mesh;
+}
+
+function updateBoxGeometry(mesh, w, h, d) {
+  const width = Math.max(0.1, w);
+  const height = Math.max(0.05, h);
+  const depth = Math.max(0.1, d);
+
+  mesh.geometry.dispose();
+  const newGeo = new THREE.BoxGeometry(width, height, depth);
+  newGeo.translate(0, height / 2, 0);
+  mesh.geometry = newGeo;
+
+  mesh.userData.width = width;
+  mesh.userData.height = height;
+  mesh.userData.depth = depth;
+
+  updateEdgeHighlight(mesh, mesh === selectedObject);
+}
+
+function updateEdgeHighlight(mesh, isSelected) {
+  // Remove old wireframe child
+  const oldEdges = mesh.getObjectByName('archEdges');
+  if (oldEdges) {
+    oldEdges.geometry.dispose();
+    mesh.remove(oldEdges);
+  }
+  if (!mesh.geometry) return;
+  const edgesGeo = new THREE.EdgesGeometry(mesh.geometry, 25);
+  const edgesMat = new THREE.LineBasicMaterial({
+    color: isSelected ? 0x00e5ff : 0x11161d,
+    linewidth: isSelected ? 2 : 1
+  });
+  const line = new THREE.LineSegments(edgesGeo, edgesMat);
+  line.name = 'archEdges';
+  mesh.add(line);
+}
+
+function selectObject(obj) {
+  if (selectedObject && selectedObject !== obj) {
+    setSelectionVisual(selectedObject, false);
+  }
+  selectedObject = obj;
+  if (selectedObject) {
+    setSelectionVisual(selectedObject, true);
+    contextBar.style.display = 'flex';
+    if (selectedObject.userData.isArchVolume) {
+      const u = selectedObject.userData;
+      const area = (u.width * u.depth).toFixed(2);
+      hudText.textContent = `${u.width.toFixed(2)}m × ${u.depth.toFixed(2)}m • H: ${u.height.toFixed(2)}m (${area} m²)`;
+    } else {
+      hudText.textContent = `Imported Model Selected • Scale: ${selectedObject.scale.x.toFixed(2)}x`;
+    }
+  } else {
+    contextBar.style.display = 'none';
+  }
+}
+
+function setSelectionVisual(obj, isSel) {
+  if (obj.userData.isArchVolume) {
+    updateEdgeHighlight(obj, isSel);
+  } else {
+    obj.traverse(child => {
+      if (child.isMesh && child.material) {
+        child.material.emissive = new THREE.Color(isSel ? 0x003344 : 0x000000);
+      }
+    });
+  }
+}
+
+function snap(val) {
+  return Math.round(val / snapStep) * snapStep;
+}
+
+// Convert touch screen coordinates using the +45px vertical offset when drawing
+function updateRaycaster(clientX, clientY, useOffset = false) {
+  const offsetY = useOffset ? clientY - RETICLE_OFFSET_Y : clientY;
+  if (useOffset) {
+    reticle.style.display = 'block';
+    reticle.style.left = clientX + 'px';
+    reticle.style.top = offsetY + 'px';
+  }
+  pointer.x = (clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(offsetY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+}
+
+function onPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  closeDrawers();
+
+  if (currentTool === 'orbit') {
+    updateRaycaster(e.clientX, e.clientY, false);
+    const hits = raycaster.intersectObjects(objects, true);
+    if (hits.length > 0) {
+      selectObject(findRootObject(hits[0].object));
+    } else {
+      selectObject(null);
+    }
+    return;
+  }
+
+  if (currentTool === 'rect') {
+    updateRaycaster(e.clientX, e.clientY, true);
+    // Check if drawing on top of an existing massing slab/roof
+    const objHits = raycaster.intersectObjects(objects, false);
+    baseElevation = 0;
+    if (objHits.length > 0 && objHits[0].object.userData.isArchVolume) {
+      const hitObj = objHits[0].object;
+      baseElevation = hitObj.position.y + hitObj.userData.height;
+    }
+    dragPlane.set(new THREE.Vector3(0, 1, 0), -baseElevation);
+    const intersectPt = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(dragPlane, intersectPt)) {
+      isDragging = true;
+      drawStartPoint = new THREE.Vector3(snap(intersectPt.x), baseElevation, snap(intersectPt.z));
+      previewMesh = createArchitecturalBox(snapStep, 0.20, snapStep, drawStartPoint, activeMatIndex);
+      selectObject(previewMesh);
+    }
+  } else if (currentTool === 'pushpull') {
+    updateRaycaster(e.clientX, e.clientY, false);
+    const hits = raycaster.intersectObjects(objects, true);
+    if (hits.length > 0) {
+      const root = findRootObject(hits[0].object);
+      selectObject(root);
+      if (root.userData.isArchVolume) {
+        isDragging = true;
+        dragStartY = e.clientY;
+        initialHeight = root.userData.height;
+      } else {
+        hudText.textContent = 'Imported mesh selected • Use Scale + / − buttons above';
+      }
+    }
+  } else if (currentTool === 'move') {
+    updateRaycaster(e.clientX, e.clientY, false);
+    const hits = raycaster.intersectObjects(objects, true);
+    if (hits.length > 0) {
+      const root = findRootObject(hits[0].object);
+      selectObject(root);
+      isDragging = true;
+      dragPlane.set(new THREE.Vector3(0, 1, 0), -root.position.y);
+      const pt = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(dragPlane, pt)) {
+        moveOffset.copy(root.position).sub(pt);
+      }
+    }
+  }
+}
+
+function onPointerMove(e) {
+  if (!isDragging) return;
+
+  if (currentTool === 'rect' && previewMesh && drawStartPoint) {
+    updateRaycaster(e.clientX, e.clientY, true);
+    const pt = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(dragPlane, pt)) {
+      const endX = snap(pt.x);
+      const endZ = snap(pt.z);
+      const w = Math.max(snapStep, Math.abs(endX - drawStartPoint.x));
+      const d = Math.max(snapStep, Math.abs(endZ - drawStartPoint.z));
+      const centerX = (drawStartPoint.x + endX) / 2;
+      const centerZ = (drawStartPoint.z + endZ) / 2;
+
+      previewMesh.position.set(centerX, baseElevation, centerZ);
+      updateBoxGeometry(previewMesh, w, 0.20, d);
+      const area = (w * d).toFixed(2);
+      hudText.textContent = `Footprint: ${w.toFixed(2)}m × ${d.toFixed(2)}m (${area} m²)`;
+    }
+  } else if (currentTool === 'pushpull' && selectedObject && selectedObject.userData.isArchVolume) {
+    const deltaPixels = dragStartY - e.clientY;
+    const heightDelta = snap(deltaPixels * 0.035);
+    const newH = Math.max(0.10, snap(initialHeight + heightDelta));
+    const u = selectedObject.userData;
+    updateBoxGeometry(selectedObject, u.width, newH, u.depth);
+    const vol = (u.width * u.depth * newH).toFixed(1);
+    hudText.textContent = `Push/Pull H: ${newH.toFixed(2)}m • Vol: ${vol} m³`;
+  } else if (currentTool === 'move' && selectedObject) {
+    updateRaycaster(e.clientX, e.clientY, true);
+    const pt = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(dragPlane, pt)) {
+      const target = pt.add(moveOffset);
+      selectedObject.position.x = snap(target.x);
+      selectedObject.position.z = snap(target.z);
+      hudText.textContent = `Pos X: ${selectedObject.position.x.toFixed(2)}m, Z: ${selectedObject.position.z.toFixed(2)}m`;
+    }
+  }
+}
+
+function onPointerUp() {
+  isDragging = false;
+  reticle.style.display = 'none';
+  if (currentTool === 'rect' && previewMesh) {
+    hudText.textContent = `Footprint created • Tap Push/Pull to extrude height`;
+    previewMesh = null;
+  }
+}
+
+function findRootObject(obj) {
+  while (obj.parent && obj.parent !== scene) {
+    obj = obj.parent;
+  }
+  return obj;
+}
+
+// ============================================================================
+// UI CONTROLS, NUMERIC KEY-IN, 3D WAREHOUSE & FILE IMPORT/EXPORT
+// ============================================================================
+function setupUIEvents() {
+  // Bottom Tool Switching
+  document.querySelectorAll('.tool-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tool = btn.dataset.tool;
+      if (tool === 'warehouse') {
+        toggleDrawer('drawer-warehouse');
+        return;
+      }
+      if (tool === 'materials') {
+        toggleDrawer('drawer-materials');
+        return;
+      }
+      closeDrawers();
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTool = tool;
+      controls.enabled = (tool === 'orbit');
+
+      const hints = {
+        orbit: 'Orbit mode • 1-finger tumble, 2-finger pan/zoom',
+        rect: 'Footprint mode • Drag on ground or roof (+45px offset reticle)',
+        pushpull: 'Push/Pull mode • Drag any slab/volume vertically to extrude',
+        move: 'Move mode • Drag any object across the site grid'
+      };
+      hudText.textContent = hints[tool] || '';
+    });
+  });
+
+  // Exact Numeric Key-In (Tap on Dimension Badge)
+  document.getElementById('dim-hud').addEventListener('click', () => {
+    if (!selectedObject || !selectedObject.userData.isArchVolume) {
+      alert('Select a massing volume first, then tap here to enter exact dimensions.');
+      return;
+    }
+    const u = selectedObject.userData;
+    const currentStr = `${u.width.toFixed(2)}, ${u.depth.toFixed(2)}, ${u.height.toFixed(2)}`;
+    const input = prompt('Enter exact Width, Depth, Height in meters (or single value for Height):', currentStr);
+    if (!input) return;
+    const parts = input.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
+    if (parts.length === 1) {
+      updateBoxGeometry(selectedObject, u.width, parts[0], u.depth);
+    } else if (parts.length >= 3) {
+      updateBoxGeometry(selectedObject, parts[0], parts[2], parts[1]);
+    }
+    selectObject(selectedObject);
+  });
+
+  // Snap Increment Toggle
+  const btnSnap = document.getElementById('btn-snap');
+  btnSnap.addEventListener('click', () => {
+    snapIndex = (snapIndex + 1) % snapOptions.length;
+    snapStep = snapOptions[snapIndex];
+    btnSnap.textContent = `Snap: ${snapStep}m`;
+  });
+
+  // Camera Preset Views (Iso / Top Plan / Front Elevation)
+  let viewMode = 0;
+  const btnView = document.getElementById('btn-view');
+  btnView.addEventListener('click', () => {
+    viewMode = (viewMode + 1) % 3;
+    if (viewMode === 0) {
+      camera.position.set(14, 12, 16);
+      btnView.textContent = 'Iso';
+    } else if (viewMode === 1) {
+      camera.position.set(0, 28, 0.01);
+      btnView.textContent = 'Top Plan';
+    } else {
+      camera.position.set(0, 3, 22);
+      btnView.textContent = 'Elevation';
+    }
+    controls.target.set(0, 1.5, 0);
+    controls.update();
+  });
+
+  // Sun Shadow Toggle
+  const btnSun = document.getElementById('btn-sun');
+  btnSun.addEventListener('click', () => {
+    sunLight.castShadow = !sunLight.castShadow;
+    btnSun.classList.toggle('active', sunLight.castShadow);
+  });
+
+  // Undo Button
+  document.getElementById('btn-undo').addEventListener('click', () => {
+    if (objects.length === 0) return;
+    const last = objects.pop();
+    if (selectedObject === last) selectObject(null);
+    scene.remove(last);
+    hudText.textContent = 'Undid last object';
+  });
+
+  // Selected Object Context Actions
+  document.getElementById('ctx-rot').addEventListener('click', () => {
+    if (selectedObject) selectedObject.rotation.y += THREE.MathUtils.degToRad(15);
+  });
+  document.getElementById('ctx-scale-up').addEventListener('click', () => {
+    if (selectedObject) {
+      selectedObject.scale.multiplyScalar(1.25);
+      selectObject(selectedObject);
+    }
+  });
+  document.getElementById('ctx-scale-down').addEventListener('click', () => {
+    if (selectedObject) {
+      selectedObject.scale.multiplyScalar(0.8);
+      selectObject(selectedObject);
+    }
+  });
+  document.getElementById('ctx-dup').addEventListener('click', () => {
+    if (!selectedObject) return;
+    if (selectedObject.userData.isArchVolume) {
+      const u = selectedObject.userData;
+      const pos = selectedObject.position.clone().add(new THREE.Vector3(1.0, 0, 1.0));
+      const copy = createArchitecturalBox(u.width, u.height, u.depth, pos, u.matIndex);
+      selectObject(copy);
+    } else {
+      const clone = selectedObject.clone();
+      clone.position.add(new THREE.Vector3(1.5, 0, 1.5));
+      scene.add(clone);
+      objects.push(clone);
+      selectObject(clone);
+    }
+  });
+  document.getElementById('ctx-del').addEventListener('click', () => {
+    if (!selectedObject) return;
+    const idx = objects.indexOf(selectedObject);
+    if (idx > -1) objects.splice(idx, 1);
+    scene.remove(selectedObject);
+    selectObject(null);
+    hudText.textContent = 'Object deleted';
+  });
+
+  // Export Scene to .GLB (For SketchUp / Rhino / Blender / Revit)
+  document.getElementById('btn-export').addEventListener('click', () => {
+    const exporter = new THREE.GLTFExporter();
+    const exportGroup = new THREE.Group();
+    objects.forEach(obj => exportGroup.add(obj.clone()));
+    exporter.parse(exportGroup, (glb) => {
+      const blob = new Blob([glb], { type: 'model/gltf-binary' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'PocketMass-Model.glb';
+      a.click();
+      URL.revokeObjectURL(url);
+      hudText.textContent = 'Exported PocketMass-Model.glb';
+    }, { binary: true });
+  });
+
+  // Native iOS File Importer (.GLB, .GLTF, .OBJ, .STL)
+  document.getElementById('file-input').addEventListener('change', handleFileImport);
+}
+
+function buildMaterialSwatches() {
+  const container = document.getElementById('swatch-container');
+  MATERIALS.forEach((m, idx) => {
+    const div = document.createElement('div');
+    div.className = 'swatch' + (idx === activeMatIndex ? ' active' : '');
+    div.style.background = '#' + m.color.toString(16).padStart(6, '0');
+    div.textContent = m.name;
+    div.addEventListener('click', () => {
+      activeMatIndex = idx;
+      document.querySelectorAll('.swatch').forEach((s, i) => s.classList.toggle('active', i === idx));
+      if (selectedObject && selectedObject.userData.isArchVolume) {
+        selectedObject.material.color.setHex(m.color);
+        selectedObject.material.roughness = m.roughness;
+        selectedObject.material.metalness = m.metalness;
+        selectedObject.material.transparent = !!m.transparent;
+        selectedObject.material.opacity = m.opacity;
+        selectedObject.material.needsUpdate = true;
+        selectedObject.userData.matIndex = idx;
+      }
+      closeDrawers();
+    });
+    container.appendChild(div);
+  });
+}
+
+function toggleDrawer(id) {
+  const el = document.getElementById(id);
+  const wasOpen = el.classList.contains('open');
+  closeDrawers();
+  if (!wasOpen) el.classList.add('open');
+}
+
+function closeDrawers() {
+  document.querySelectorAll('.drawer').forEach(d => d.classList.remove('open'));
+}
+
+// Launch Trimble 3D Warehouse Search
+function searchWarehouse() {
+  const q = document.getElementById('wh-search').value.trim() || 'architecture furniture';
+  const url = `https://3dwarehouse.sketchup.com/search?q=${encodeURIComponent(q)}&searchTab=model`;
+  window.open(url, '_blank');
+}
+
+// Parse & Normalize Imported 3D Warehouse Files (.glb, .gltf, .obj, .stl)
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const reader = new FileReader();
+
+  hudText.textContent = `Importing ${file.name}...`;
+  closeDrawers();
+
+  if (ext === 'glb' || ext === 'gltf') {
+    reader.onload = (e) => {
+      const loader = new THREE.GLTFLoader();
+      loader.parse(e.target.result, '', (gltf) => {
+        integrateImportedModel(gltf.scene, file.name);
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (ext === 'obj') {
+    reader.onload = (e) => {
+      const loader = new THREE.OBJLoader();
+      const obj = loader.parse(e.target.result);
+      integrateImportedModel(obj, file.name);
+    };
+    reader.readAsText(file);
+  } else if (ext === 'stl') {
+    reader.onload = (e) => {
+      const loader = new THREE.STLLoader();
+      const geo = loader.parse(e.target.result);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xd8dee9, roughness: 0.6 });
+      const mesh = new THREE.Mesh(geo, mat);
+      integrateImportedModel(mesh, file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  event.target.value = '';
+}
+
+function integrateImportedModel(root, filename) {
+  const wrapper = new THREE.Group();
+  wrapper.add(root);
+
+  // Compute bounding box to center X/Z and place bottom flush at Z=0 (Y=0 in Three.js)
+  const box = new THREE.Box3().setFromObject(wrapper);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  // Auto-normalize if model was exported in millimeters or inches
+  const maxDim = Math.max(size.x, size.y, size.z);
+  let scaleFactor = 1.0;
+  if (maxDim > 50) scaleFactor = 0.01;
+  else if (maxDim < 0.2) scaleFactor = 10.0;
+
+  root.position.sub(center);
+  root.position.y += size.y / 2;
+  wrapper.scale.setScalar(scaleFactor);
+
+  wrapper.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  scene.add(wrapper);
+  objects.push(wrapper);
+  selectObject(wrapper);
+  hudText.textContent = `Imported ${filename} • Use Move tool or Scale + / −`;
+}
+
+// Built-in Scale-Calibrated Architectural Entourage
+function spawnEntourage(type) {
+  closeDrawers();
+  const group = new THREE.Group();
+
+  if (type === 'human') {
+    // 1.75m Architectural Scale Figure
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.14, 1.4, 12), new THREE.MeshStandardMaterial({ color: 0x2b303c }));
+    body.position.y = 0.7;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), new THREE.MeshStandardMaterial({ color: 0xe0ac69 }));
+    head.position.y = 1.58;
+    group.add(body, head);
+  } else if (type === 'tree') {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 2.0, 8), new THREE.MeshStandardMaterial({ color: 0x6e4e37 }));
+    trunk.position.y = 1.0;
+    const canopy = new THREE.Mesh(new THREE.DodecahedronGeometry(1.9, 1), new THREE.MeshStandardMaterial({ color: 0x4c7c54, roughness: 0.9 }));
+    canopy.position.y = 3.4;
+    group.add(trunk, canopy);
+  } else if (type === 'pergola') {
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0xb87a4b, roughness: 0.6 });
+    [[-1.8, -1.8], [1.8, -1.8], [-1.8, 1.8], [1.8, 1.8]].forEach(([x, z]) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.8, 0.18), woodMat);
+      post.position.set(x, 1.4, z);
+      group.add(post);
+    });
+    for (let i = -1.8; i <= 1.8; i += 0.45) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.15, 0.08), woodMat);
+      slat.position.set(0, 2.85, i);
+      group.add(slat);
+    }
+  } else if (type === 'stair') {
+    const stairMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.8 });
+    for (let i = 0; i < 12; i++) {
+      const step = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.17, 0.28), stairMat);
+      step.position.set(0, 0.085 + i * 0.17, i * 0.28 - 1.5);
+      group.add(step);
+    }
+  } else if (type === 'pitched') {
+    const shape = new THREE.Shape();
+    shape.moveTo(-2.5, 0);
+    shape.lineTo(2.5, 0);
+    shape.lineTo(0, 1.8);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 6, bevelEnabled: false });
+    geo.translate(0, 0, -3);
+    const roof = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xd96b43, roughness: 0.7 }));
+    group.add(roof);
+  } else if (type === 'car') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.75, 4.5), new THREE.MeshStandardMaterial({ color: 0x3b4252, metalness: 0.5, roughness: 0.3 }));
+    body.position.y = 0.55;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.55, 2.3), new THREE.MeshStandardMaterial({ color: 0x88c0d0, transparent: true, opacity: 0.6 }));
+    cabin.position.set(0, 1.15, -0.2);
+    group.add(body, cabin);
+  }
+
+  group.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+  group.position.set(2, 0, 2);
+  scene.add(group);
+  objects.push(group);
+  selectObject(group);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
