@@ -1,0 +1,2280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Atelier 3D">
+<title>Atelier 3D — Interior Design & Architectural Modeler</title>
+
+<!-- Three.js Core & Official Loaders/Exporters -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+
+<style>
+  :root {
+    --bg-beige: #EFECE6;
+    --bg-beige-deep: #E5E0D6;
+    --surface-white: rgba(255, 255, 255, 0.94);
+    --surface-solid: #FFFFFF;
+    --surface-subtle: #F7F5F0;
+    --panel-border: rgba(28, 25, 23, 0.09);
+    --text-main: #1C1917;
+    --text-muted: #78716C;
+    --accent: #292524;
+    --accent-warm: #8C6239;
+    --accent-soft: rgba(140, 98, 57, 0.12);
+    --component-tint: #2563EB;
+    --group-tint: #059669;
+    --danger: #DC2626;
+    --shadow-soft: 0 8px 28px rgba(28, 25, 23, 0.08), 0 2px 6px rgba(28, 25, 23, 0.04);
+    --shadow-modal: 0 20px 50px rgba(28, 25, 23, 0.16);
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-beige);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+    color: var(--text-main);
+    touch-action: none;
+  }
+
+  #canvas-container {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  /* Top Compact Status & Quick Actions Bar */
+  .top-bar {
+    position: absolute;
+    top: max(10px, env(safe-area-inset-top));
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .pill-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--surface-white);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--panel-border);
+    border-radius: 22px;
+    padding: 4px 6px;
+    pointer-events: auto;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .top-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 9px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .top-btn:active {
+    transform: scale(0.96);
+    background: var(--surface-subtle);
+  }
+
+  .top-btn.active {
+    background: var(--accent);
+    color: #FFFFFF;
+  }
+
+  .top-btn.accent-pill {
+    background: var(--accent-soft);
+    color: var(--accent-warm);
+  }
+
+  /* Offset Precision Reticle (Prevents Fat-Finger Occlusion on iPhone) */
+  #reticle {
+    position: absolute;
+    width: 46px;
+    height: 46px;
+    margin-left: -23px;
+    margin-top: -23px;
+    pointer-events: none;
+    z-index: 25;
+    display: none;
+  }
+  #reticle::before, #reticle::after {
+    content: '';
+    position: absolute;
+    background: var(--accent);
+  }
+  #reticle::before { top: 22px; left: 4px; right: 4px; height: 1.5px; }
+  #reticle::after { left: 22px; top: 4px; bottom: 4px; width: 1.5px; }
+  .reticle-ring {
+    position: absolute;
+    inset: 8px;
+    border: 2px solid var(--accent-warm);
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  /* Live Architectural Dimension HUD & Tap-to-Key Input */
+  .hud-bar {
+    position: absolute;
+    bottom: calc(90px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .dim-badge {
+    background: var(--surface-white);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.1px;
+    color: var(--text-main);
+    pointer-events: auto;
+    cursor: pointer;
+    box-shadow: var(--shadow-soft);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .dim-badge .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-warm);
+    flex-shrink: 0;
+  }
+
+  #hud-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dim-badge span.hint {
+    color: var(--accent-warm);
+    background: var(--accent-soft);
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  /* Context Action Bar (Appears when object / group / component is selected) */
+  #context-bar {
+    position: absolute;
+    bottom: calc(134px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    display: none;
+    justify-content: center;
+    z-index: 12;
+    pointer-events: none;
+  }
+
+  .context-scroll {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    background: var(--surface-white);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 6px 8px;
+    box-shadow: var(--shadow-soft);
+    overflow-x: auto;
+    max-width: 100%;
+    pointer-events: auto;
+    scrollbar-width: none;
+  }
+  .context-scroll::-webkit-scrollbar { display: none; }
+
+  .ctx-btn {
+    background: var(--surface-subtle);
+    border: 1px solid rgba(28, 25, 23, 0.08);
+    color: var(--text-main);
+    border-radius: 12px;
+    padding: 6px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.12s ease;
+  }
+  .ctx-btn:active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .ctx-btn.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .ctx-btn.comp-btn {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--component-tint);
+    border-color: rgba(37, 99, 235, 0.25);
+  }
+  .ctx-btn.group-btn {
+    background: rgba(5, 150, 105, 0.1);
+    color: var(--group-tint);
+    border-color: rgba(5, 150, 105, 0.25);
+  }
+  .ctx-btn.danger {
+    color: var(--danger);
+    background: rgba(220, 38, 38, 0.06);
+    border-color: rgba(220, 38, 38, 0.2);
+  }
+
+  /* Ergonomic Bottom Thumb Dock */
+  .bottom-dock {
+    position: absolute;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    height: 70px;
+    background: var(--surface-white);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    padding: 5px;
+    z-index: 15;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .tool-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 18px;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .tool-btn svg {
+    width: 21px;
+    height: 21px;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .tool-btn.active {
+    background: var(--accent);
+    color: #FFFFFF;
+    box-shadow: 0 4px 12px rgba(28, 25, 23, 0.18);
+    transform: translateY(-1px);
+  }
+
+  /* Slide-Up Drawers (Interior Catalog, Materials, Scene Outliner) */
+  .drawer {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    background: var(--surface-white);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    border: 1px solid var(--panel-border);
+    border-radius: 26px;
+    padding: 18px;
+    z-index: 30;
+    display: none;
+    box-shadow: var(--shadow-modal);
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  .drawer.open { display: block; }
+
+  .drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    position: sticky;
+    top: 0;
+    background: inherit;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--panel-border);
+    z-index: 2;
+  }
+  .drawer-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: -0.3px;
+  }
+  .close-btn {
+    background: var(--surface-subtle);
+    border: 1px solid var(--panel-border);
+    color: var(--text-main);
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Category Tabs inside Drawer */
+  .cat-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    scrollbar-width: none;
+  }
+  .cat-tabs::-webkit-scrollbar { display: none; }
+
+  .cat-tab {
+    background: var(--surface-subtle);
+    border: 1px solid var(--panel-border);
+    color: var(--text-muted);
+    padding: 7px 13px;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .cat-tab.active {
+    background: var(--accent);
+    color: #FFFFFF;
+    border-color: var(--accent);
+  }
+
+  .asset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .asset-item {
+    background: var(--surface-subtle);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 12px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.14s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .asset-item:active {
+    background: var(--accent-soft);
+    border-color: var(--accent-warm);
+    transform: scale(0.97);
+  }
+  .asset-icon {
+    font-size: 20px;
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+  .asset-name {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-main);
+    line-height: 1.2;
+  }
+  .asset-dim {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  /* Materials Swatch Grid */
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .swatch {
+    border-radius: 14px;
+    height: 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 7px;
+    font-size: 10.5px;
+    font-weight: 600;
+    border: 2px solid rgba(28, 25, 23, 0.12);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 -22px 24px rgba(0,0,0,0.22);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.65);
+  }
+  .swatch.light-swatch {
+    color: var(--text-main);
+    text-shadow: none;
+    box-shadow: inset 0 -22px 24px rgba(255,255,255,0.65);
+  }
+  .swatch.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  /* Outliner List */
+  .outliner-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .outliner-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--surface-subtle);
+    border: 1px solid var(--panel-border);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .outliner-row.selected {
+    background: var(--accent-soft);
+    border-color: var(--accent-warm);
+  }
+  .badge-tag {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .badge-comp { background: rgba(37, 99, 235, 0.12); color: var(--component-tint); }
+  .badge-group { background: rgba(5, 150, 105, 0.12); color: var(--group-tint); }
+  .badge-vol { background: rgba(28, 25, 23, 0.08); color: var(--text-muted); }
+
+  .wh-card {
+    background: var(--surface-subtle);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 14px;
+    margin-top: 12px;
+  }
+  .wh-card h4 { margin: 0 0 6px 0; font-size: 13.5px; color: var(--text-main); }
+  .wh-card p { margin: 0 0 10px 0; font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+
+  .primary-action-btn {
+    width: 100%;
+    padding: 11px;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: var(--accent);
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<!-- Offset Precision Reticle -->
+<div id="reticle"><div class="reticle-ring"></div></div>
+
+<!-- Top Utility Bar -->
+<div class="top-bar">
+  <div class="pill-group">
+    <button class="top-btn" id="btn-undo" title="Undo">↶</button>
+    <button class="top-btn" id="btn-snap">Snap: 0.10m</button>
+    <button class="top-btn" id="btn-multi" title="Multi-Select Mode">❑ Multi</button>
+  </div>
+  <div class="pill-group">
+    <button class="top-btn" id="btn-view">Iso</button>
+    <button class="top-btn" id="btn-outliner">☰ Layers</button>
+    <button class="top-btn accent-pill" id="btn-export">⤓ GLB</button>
+  </div>
+</div>
+
+<!-- Context Bar for Selected Object(s) / Groups / Components -->
+<div id="context-bar">
+  <div class="context-scroll">
+    <button class="ctx-btn primary" id="ctx-dup">⧉ Duplicate</button>
+    <button class="ctx-btn comp-btn" id="ctx-comp">❖ Make Component</button>
+    <button class="ctx-btn comp-btn" id="ctx-unique" style="display:none;">❖ Make Unique</button>
+    <button class="ctx-btn group-btn" id="ctx-group">⊞ Group</button>
+    <button class="ctx-btn group-btn" id="ctx-ungroup" style="display:none;">⊟ Ungroup</button>
+    <button class="ctx-btn" id="ctx-rot45">↻ 45°</button>
+    <button class="ctx-btn" id="ctx-rot90">↻ 90°</button>
+    <button class="ctx-btn" id="ctx-ground">⤓ Floor</button>
+    <button class="ctx-btn" id="ctx-scale-down">Scale −</button>
+    <button class="ctx-btn" id="ctx-scale-up">Scale +</button>
+    <button class="ctx-btn danger" id="ctx-del">✕ Delete</button>
+  </div>
+</div>
+
+<!-- Live Dimension & Prompt HUD -->
+<div class="hud-bar">
+  <div class="dim-badge" id="dim-hud" title="Tap to enter exact metric dimensions">
+    <span class="status-dot" id="hud-dot"></span>
+    <span id="hud-text">Atelier 3D • Tap object or pick Draw on Face</span>
+    <span class="hint">✎ Key-in</span>
+  </div>
+</div>
+
+<!-- Premade Interior Design Catalog & Component Library Drawer -->
+<div class="drawer" id="drawer-catalog">
+  <div class="drawer-header">
+    <div class="drawer-title">Interior Design Catalog</div>
+    <button class="close-btn" onclick="closeDrawers()">✕</button>
+  </div>
+
+  <div class="cat-tabs" id="catalog-tabs">
+    <button class="cat-tab active" data-cat="architecture">Architectural</button>
+    <button class="cat-tab" data-cat="living">Living Room</button>
+    <button class="cat-tab" data-cat="kitchen">Kitchen & Dining</button>
+    <button class="cat-tab" data-cat="bedroom">Bedroom & Study</button>
+    <button class="cat-tab" data-cat="bath">Bath & Decor</button>
+    <button class="cat-tab" data-cat="components">My Components</button>
+    <button class="cat-tab" data-cat="import">Import 3D</button>
+  </div>
+
+  <div id="catalog-content"></div>
+</div>
+
+<!-- Interior Finishes & Materials Drawer -->
+<div class="drawer" id="drawer-materials">
+  <div class="drawer-header">
+    <div class="drawer-title">Interior Finishes & Materials</div>
+    <button class="close-btn" onclick="closeDrawers()">✕</button>
+  </div>
+  <p style="font-size:12px; color:var(--text-muted); margin:0 0 12px 0;">
+    Tap a finish to apply to the selection (updates all linked instances if applied to a Component):
+  </p>
+  <div class="swatch-grid" id="swatch-container"></div>
+</div>
+
+<!-- Outliner & Hierarchy Drawer -->
+<div class="drawer" id="drawer-outliner">
+  <div class="drawer-header">
+    <div class="drawer-title">Scene Outliner & Components</div>
+    <button class="close-btn" onclick="closeDrawers()">✕</button>
+  </div>
+  <div style="display:flex; gap:6px; margin-bottom:12px;">
+    <button class="ctx-btn" onclick="selectAllObjects()">Select All</button>
+    <button class="ctx-btn" onclick="clearSelection(); renderOutliner();">Clear Selection</button>
+    <button class="ctx-btn" onclick="spawnRoomShell()">+ New Room Shell</button>
+  </div>
+  <div class="outliner-list" id="outliner-list"></div>
+</div>
+
+<!-- Hidden File Input for GLB/OBJ/STL -->
+<input type="file" id="file-input" accept=".glb,.gltf,.obj,.stl" style="display:none">
+
+<!-- Bottom Thumb Dock -->
+<div class="bottom-dock">
+  <button class="tool-btn active" data-tool="orbit">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18"/></svg>
+    Select
+  </button>
+  <button class="tool-btn" data-tool="drawface">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" stroke-dasharray="2 2"/></svg>
+    Draw Face
+  </button>
+  <button class="tool-btn" data-tool="pushpull">
+    <svg viewBox="0 0 24 24"><path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 15l8 4 8-4"/><path d="M4 19l8 4 8-4"/></svg>
+    Extrude
+  </button>
+  <button class="tool-btn" data-tool="move">
+    <svg viewBox="0 0 24 24"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
+    Move
+  </button>
+  <button class="tool-btn" data-tool="materials">
+    <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+    Finishes
+  </button>
+  <button class="tool-btn" data-tool="catalog">
+    <svg viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Catalog
+  </button>
+</div>
+
+<script>
+// ============================================================================
+// ATELIER 3D — INTERIOR DESIGN, FACE DRAWING, EXTRUSION & COMPONENT ENGINE
+// ============================================================================
+const container = document.getElementById('canvas-container');
+const reticle = document.getElementById('reticle');
+const hudText = document.getElementById('hud-text');
+const contextBar = document.getElementById('context-bar');
+
+let scene, camera, renderer, controls, sunLight;
+let groundPlane, gridHelper, faceHighlightMesh;
+let currentTool = 'orbit';
+let snapStep = 0.10;
+const snapOptions = [0.05, 0.10, 0.25, 0.50];
+let snapIndex = 1;
+let multiSelectMode = false;
+
+// Scene Graph & Selection
+const objects = []; // Top-level objects in scene
+const selectedObjects = []; // Supports single & multi-selection for grouping
+const undoStack = [];
+
+// Component Registry: { [compId]: { id, name, instances: [] } }
+const componentRegistry = {};
+let componentCounter = 1;
+let groupCounter = 1;
+
+// Sober White, Beige & Architectural Interior Materials Library
+const MATERIALS = [
+  { name: 'Chalk White', color: 0xFAF8F5, roughness: 0.85, metalness: 0.02, opacity: 1.0, light: true },
+  { name: 'Warm Beige', color: 0xDFD7C8, roughness: 0.82, metalness: 0.02, opacity: 1.0, light: true },
+  { name: 'Travertine', color: 0xD2C7B8, roughness: 0.70, metalness: 0.05, opacity: 1.0, light: true },
+  { name: 'White Oak', color: 0xC8A97E, roughness: 0.62, metalness: 0.04, opacity: 1.0, light: true },
+  { name: 'Smoked Walnut', color: 0x6E4C36, roughness: 0.55, metalness: 0.06, opacity: 1.0 },
+  { name: 'Bouclé Cream', color: 0xF2EDE2, roughness: 0.95, metalness: 0.0, opacity: 1.0, light: true },
+  { name: 'oatmeal Linen', color: 0xC7BFA7, roughness: 0.92, metalness: 0.0, opacity: 1.0, light: true },
+  { name: 'Sage Velvet', color: 0x7A8B7B, roughness: 0.88, metalness: 0.02, opacity: 1.0 },
+  { name: 'Terracotta Clay', color: 0xC66B4D, roughness: 0.78, metalness: 0.03, opacity: 1.0 },
+  { name: 'Carrara Marble', color: 0xECEEF0, roughness: 0.25, metalness: 0.08, opacity: 1.0, light: true },
+  { name: 'Brushed Brass', color: 0xC5A059, roughness: 0.30, metalness: 0.80, opacity: 1.0 },
+  { name: 'Matte Anthracite', color: 0x2B2927, roughness: 0.45, metalness: 0.55, opacity: 1.0 },
+  { name: 'Microcement', color: 0xA8A39D, roughness: 0.75, metalness: 0.05, opacity: 1.0, light: true },
+  { name: 'Clear Glass', color: 0xD8E8EE, roughness: 0.08, metalness: 0.15, opacity: 0.38, transparent: true, light: true },
+  { name: 'Fluted Bronze Glass', color: 0x8C7A6B, roughness: 0.20, metalness: 0.25, opacity: 0.52, transparent: true },
+  { name: 'Botanical Leaf', color: 0x4D724D, roughness: 0.85, metalness: 0.0, opacity: 1.0 }
+];
+let activeMatIndex = 0;
+
+// Premade Standard Interior Objects Catalog
+const CATALOG_ITEMS = {
+  architecture: [
+    { id: 'room_shell', name: 'Room Shell (L-Wall)', dim: '5.0 × 4.0 × 2.7m', icon: '🏠' },
+    { id: 'wall_straight', name: 'Partition Wall', dim: '3.0 × 0.15 × 2.7m', icon: '🧱' },
+    { id: 'door_interior', name: 'Interior Doorway', dim: '0.95 × 0.15 × 2.1m', icon: '🚪' },
+    { id: 'window_casement', name: 'Picture Window', dim: '1.6 × 0.18 × 1.4m', icon: '🪟' },
+    { id: 'column_round', name: 'Fluted Column', dim: 'Ø 0.35 × 2.7m', icon: '🏛' },
+    { id: 'stair_floating', name: 'Floating Stair', dim: '1.1 × 3.2 × 2.7m', icon: '🪜' }
+  ],
+  living: [
+    { id: 'sofa_3seat', name: '3-Seater Bouclé Sofa', dim: '2.20 × 0.92 × 0.78m', icon: '🛋' },
+    { id: 'sofa_sectional', name: 'L-Shape Sectional', dim: '2.60 × 1.75 × 0.78m', icon: '🛋' },
+    { id: 'armchair', name: 'Accent Lounge Chair', dim: '0.82 × 0.84 × 0.76m', icon: '🪑' },
+    { id: 'coffee_table', name: 'Travertine Table', dim: '1.20 × 0.65 × 0.36m', icon: '🪵' },
+    { id: 'credenza', name: 'Oak Media Console', dim: '1.80 × 0.45 × 0.52m', icon: '🗄' },
+    { id: 'bookshelf', name: 'Open Shelving Unit', dim: '1.00 × 0.36 × 2.00m', icon: '📚' },
+    { id: 'rug_large', name: 'Woven Area Rug', dim: '3.00 × 2.00m', icon: '⬜' }
+  ],
+  kitchen: [
+    { id: 'kitchen_island', name: 'Waterfall Island', dim: '2.10 × 0.95 × 0.90m', icon: '🏝' },
+    { id: 'kitchen_counter', name: 'Sink Base Run', dim: '2.40 × 0.62 × 0.90m', icon: '🚰' },
+    { id: 'dining_table', name: '6-Seat Dining Table', dim: '1.90 × 0.95 × 0.75m', icon: '🍽' },
+    { id: 'dining_chair', name: 'Wishbone Chair', dim: '0.52 × 0.52 × 0.78m', icon: '🪑' },
+    { id: 'bar_stool', name: 'Counter Stool', dim: '0.42 × 0.42 × 0.66m', icon: 'High' },
+    { id: 'fridge', name: 'Built-in Fridge', dim: '0.90 × 0.72 × 2.00m', icon: '🧊' }
+  ],
+  bedroom: [
+    { id: 'queen_bed', name: 'Upholstered Queen Bed', dim: '1.70 × 2.15 × 1.05m', icon: '🛏' },
+    { id: 'nightstand', name: 'Bedside Table', dim: '0.50 × 0.42 × 0.52m', icon: '▫' },
+    { id: 'wardrobe', name: 'Double Wardrobe', dim: '1.60 × 0.60 × 2.20m', icon: '🚪' },
+    { id: 'work_desk', name: 'Architect Desk', dim: '1.50 × 0.70 × 0.75m', icon: '💻' }
+  ],
+  bath: [
+    { id: 'bathtub', name: 'Freestanding Tub', dim: '1.70 × 0.80 × 0.58m', icon: '🛁' },
+    { id: 'vanity', name: 'Vanity & Mirror', dim: '1.10 × 0.52 × 0.85m', icon: '🪞' },
+    { id: 'floor_lamp', name: 'Brass Floor Lamp', dim: '0.45 × 0.45 × 1.62m', icon: '💡' },
+    { id: 'plant_pot', name: 'Olive Tree in Pot', dim: '0.65 × 0.65 × 1.65m', icon: '🌿' },
+    { id: 'human_scale', name: 'Scale Figure (1.75m)', dim: '0.45 × 0.35 × 1.75m', icon: '🧍' }
+  ]
+};
+let activeCatalogTab = 'architecture';
+
+// Raycasting & Face Interaction States
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const RETICLE_OFFSET_Y = 44; // 44px above thumb for zero fat-finger occlusion
+
+let isDragging = false;
+let activeFaceInfo = null; // { mesh, localNormal, worldNormal, hitPoint, basisU, basisV, plane }
+let drawStartPoint = null;
+let previewMesh = null;
+
+// Push/Pull State
+let pushPullState = null; // { mesh, localAxis: 'x'|'y'|'z', sign: 1|-1, worldNormal, startScreenPos, startDim, startPos }
+
+// Move State
+let moveState = null; // { plane, offset, startPositions: Map }
+
+init();
+animate();
+
+function init() {
+  scene = new THREE.Scene();
+  // Warm sober architectural beige background
+  scene.background = new THREE.Color(0xEFECE6);
+  scene.fog = new THREE.FogExp2(0xEFECE6, 0.009);
+
+  camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.08, 300);
+  camera.position.set(8.5, 7.2, 9.5);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.04;
+  container.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI / 2 - 0.005;
+  controls.target.set(0, 1.1, 0);
+
+  // Warm Natural Interior Daylight + Soft Fill
+  const ambientLight = new THREE.AmbientLight(0xFFFDF9, 0.55);
+  scene.add(ambientLight);
+
+  const hemiLight = new THREE.HemisphereLight(0xFFFFFF, 0xD8CFC2, 0.55);
+  scene.add(hemiLight);
+
+  sunLight = new THREE.DirectionalLight(0xFFF7EB, 0.85);
+  sunLight.position.set(14, 24, 16);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.width = 2048;
+  sunLight.shadow.mapSize.height = 2048;
+  sunLight.shadow.camera.near = 0.5;
+  sunLight.shadow.camera.far = 80;
+  const d = 14;
+  sunLight.shadow.camera.left = -d;
+  sunLight.shadow.camera.right = d;
+  sunLight.shadow.camera.top = d;
+  sunLight.shadow.camera.bottom = -d;
+  sunLight.shadow.bias = -0.0004;
+  scene.add(sunLight);
+
+  // Sober Warm Beige Ground Plane & Architectural Grid
+  const groundGeo = new THREE.PlaneGeometry(160, 160);
+  const groundMat = new THREE.MeshStandardMaterial({
+    color: 0xE6E1D7,
+    roughness: 0.96,
+    metalness: 0.0
+  });
+  groundPlane = new THREE.Mesh(groundGeo, groundMat);
+  groundPlane.rotation.x = -Math.PI / 2;
+  groundPlane.receiveShadow = true;
+  groundPlane.name = 'groundPlane';
+  scene.add(groundPlane);
+
+  gridHelper = new THREE.GridHelper(30, 30, 0xC5BDB0, 0xD9D3C7);
+  gridHelper.position.y = 0.001;
+  scene.add(gridHelper);
+
+  buildSubtleAxes();
+  buildFaceHighlightHelper();
+  buildMaterialSwatches();
+  renderCatalog('architecture');
+
+  // Create Starter Interior Vignette (L-Wall Room Shell + Sofa + Coffee Table + Rug)
+  spawnStarterInterior();
+
+  // Touch & Pointer Listeners
+  const dom = renderer.domElement;
+  dom.addEventListener('pointerdown', onPointerDown);
+  dom.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('resize', onWindowResize);
+
+  setupUIEvents();
+}
+
+function buildSubtleAxes() {
+  const axisLen = 15;
+  const xGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.003, 0), new THREE.Vector3(axisLen, 0.003, 0)]);
+  scene.add(new THREE.Line(xGeo, new THREE.LineBasicMaterial({ color: 0xC85A4B, transparent: true, opacity: 0.55 })));
+
+  const zGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.003, 0), new THREE.Vector3(0, 0.003, axisLen)]);
+  scene.add(new THREE.Line(zGeo, new THREE.LineBasicMaterial({ color: 0x5B8C69, transparent: true, opacity: 0.55 })));
+
+  const yGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 6, 0)]);
+  scene.add(new THREE.Line(yGeo, new THREE.LineBasicMaterial({ color: 0x4A7BB0, transparent: true, opacity: 0.45 })));
+}
+
+function buildFaceHighlightHelper() {
+  const geo = new THREE.PlaneGeometry(1, 1);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x8C6239,
+    transparent: true,
+    opacity: 0.26,
+    side: THREE.DoubleSide,
+    depthTest: false
+  });
+  faceHighlightMesh = new THREE.Mesh(geo, mat);
+  faceHighlightMesh.visible = false;
+  const borderGeo = new THREE.EdgesGeometry(geo);
+  const borderMat = new THREE.LineBasicMaterial({ color: 0x8C6239 });
+  faceHighlightMesh.add(new THREE.LineSegments(borderGeo, borderMat));
+  scene.add(faceHighlightMesh);
+}
+
+// ============================================================================
+// CORE GEOMETRY: CENTER-ORIGIN ARCHITECTURAL BOX (SUPPORTS 6-FACE PUSH/PULL)
+// ============================================================================
+function createArchVolume(w, h, d, centerPos, matIdx = activeMatIndex, name = 'Volume', addToScene = true) {
+  const width = Math.max(0.02, w);
+  const height = Math.max(0.02, h);
+  const depth = Math.max(0.02, d);
+
+  // Centered BoxGeometry allows pushing/pulling ANY of the 6 faces (+X, -X, +Y, -Y, +Z, -Z)
+  const geo = new THREE.BoxGeometry(width, height, depth);
+  const mSpec = MATERIALS[matIdx] || MATERIALS[0];
+  const mat = new THREE.MeshStandardMaterial({
+    color: mSpec.color,
+    roughness: mSpec.roughness,
+    metalness: mSpec.metalness,
+    transparent: !!mSpec.transparent,
+    opacity: mSpec.opacity
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(centerPos);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  mesh.userData = {
+    isArchVolume: true,
+    name: name,
+    width: width,
+    height: height,
+    depth: depth,
+    matIndex: matIdx,
+    componentId: null
+  };
+
+  updateEdgeLines(mesh, false);
+
+  if (addToScene) {
+    scene.add(mesh);
+    objects.push(mesh);
+    undoStack.push({ action: 'add', obj: mesh });
+  }
+  return mesh;
+}
+
+function resizeArchVolume(mesh, newW, newH, newD, syncComponent = true) {
+  const w = Math.max(0.02, newW);
+  const h = Math.max(0.02, newH);
+  const d = Math.max(0.02, newD);
+
+  mesh.geometry.dispose();
+  mesh.geometry = new THREE.BoxGeometry(w, h, d);
+  mesh.userData.width = w;
+  mesh.userData.height = h;
+  mesh.userData.depth = d;
+
+  const isSel = selectedObjects.includes(findRootObject(mesh));
+  updateEdgeLines(mesh, isSel);
+
+  // If this mesh belongs to a Component, propagate geometry change to all sibling instances
+  const root = findRootObject(mesh);
+  if (syncComponent && root.userData.componentId) {
+    propagateComponentChange(root);
+  }
+}
+
+function updateEdgeLines(mesh, isSelected) {
+  const old = mesh.getObjectByName('archEdges');
+  if (old) {
+    old.geometry.dispose();
+    mesh.remove(old);
+  }
+  if (!mesh.geometry) return;
+
+  const root = findRootObject(mesh);
+  let edgeColor = 0x57534E; // Sober warm architectural linework
+  if (isSelected) {
+    if (root && root.userData.componentId) edgeColor = 0x2563EB; // Component blue
+    else if (root && root.userData.isGroup) edgeColor = 0x059669; // Group green
+    else edgeColor = 0x8C6239; // Warm bronze highlight
+  }
+
+  const edgesGeo = new THREE.EdgesGeometry(mesh.geometry, 22);
+  const edgesMat = new THREE.LineBasicMaterial({
+    color: edgeColor,
+    transparent: !isSelected,
+    opacity: isSelected ? 1.0 : 0.42
+  });
+  const line = new THREE.LineSegments(edgesGeo, edgesMat);
+  line.name = 'archEdges';
+  line.raycast = () => {}; // Never intercept raycasts
+  mesh.add(line);
+}
+
+// ============================================================================
+// FACE DETECTION & LOCAL TANGENT FRAME ON ANY 3D FACE
+// ============================================================================
+function detectHitFace(clientX, clientY, useOffset = false) {
+  updateRaycaster(clientX, clientY, useOffset);
+
+  // Collect all visible meshes in `objects`
+  const meshList = [];
+  objects.forEach(obj => {
+    obj.traverse(child => {
+      if (child.isMesh && child.name !== 'archEdges') meshList.push(child);
+    });
+  });
+
+  const hits = raycaster.intersectObjects([...meshList, groundPlane], false);
+  if (hits.length === 0) return null;
+
+  const hit = hits[0];
+  const hitMesh = hit.object;
+  const hitPoint = hit.point.clone();
+
+  if (hitMesh === groundPlane) {
+    const worldNormal = new THREE.Vector3(0, 1, 0);
+    const basisU = new THREE.Vector3(1, 0, 0);
+    const basisV = new THREE.Vector3(0, 0, 1);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(worldNormal, hitPoint);
+    return {
+      isGround: true,
+      mesh: groundPlane,
+      root: null,
+      localNormal: new THREE.Vector3(0, 1, 0),
+      worldNormal,
+      hitPoint,
+      basisU,
+      basisV,
+      plane,
+      faceLabel: 'Floor (Y=0)'
+    };
+  }
+
+  const localNormal = hit.face ? hit.face.normal.clone().normalize() : new THREE.Vector3(0, 1, 0);
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(hitMesh.matrixWorld);
+  const worldNormal = localNormal.clone().applyMatrix3(normalMatrix).normalize();
+
+  // Build clean orthonormal tangent basis (basisU, basisV) on the face
+  let basisU = new THREE.Vector3();
+  let basisV = new THREE.Vector3();
+
+  if (Math.abs(worldNormal.y) > 0.9) {
+    // Horizontal face (Top or Bottom of slab/table/counter)
+    basisU.set(1, 0, 0);
+    basisV.set(0, 0, 1);
+  } else {
+    // Vertical or sloped wall face: basisV points UP, basisU is horizontal along the wall
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    basisU.crossVectors(worldUp, worldNormal).normalize();
+    basisV.crossVectors(worldNormal, basisU).normalize();
+  }
+
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(worldNormal, hitPoint);
+
+  // Determine dominant local axis of the hit face for Push/Pull
+  let localAxis = 'y';
+  let sign = 1;
+  const ax = Math.abs(localNormal.x), ay = Math.abs(localNormal.y), az = Math.abs(localNormal.z);
+  if (ax >= ay && ax >= az) { localAxis = 'x'; sign = Math.sign(localNormal.x) || 1; }
+  else if (ay >= ax && ay >= az) { localAxis = 'y'; sign = Math.sign(localNormal.y) || 1; }
+  else { localAxis = 'z'; sign = Math.sign(localNormal.z) || 1; }
+
+  const faceNames = {
+    'x1': 'Side Face (+X)', 'x-1': 'Side Face (-X)',
+    'y1': 'Top Face (+Y)', 'y-1': 'Bottom Face (-Y)',
+    'z1': 'Front Face (+Z)', 'z-1': 'Back Face (-Z)'
+  };
+
+  return {
+    isGround: false,
+    mesh: hitMesh,
+    root: findRootObject(hitMesh),
+    localNormal,
+    worldNormal,
+    localAxis,
+    sign,
+    hitPoint,
+    basisU,
+    basisV,
+    plane,
+    faceLabel: faceNames[localAxis + sign] || 'Surface Face'
+  };
+}
+
+function showFaceHighlight(faceInfo) {
+  if (!faceInfo || faceInfo.isGround || !faceInfo.mesh.userData.isArchVolume) {
+    faceHighlightMesh.visible = false;
+    return;
+  }
+  const m = faceInfo.mesh;
+  const u = m.userData;
+  let fw = u.width, fh = u.height, offset = u.depth / 2;
+
+  const localPos = new THREE.Vector3();
+  const localQuat = new THREE.Quaternion();
+
+  if (faceInfo.localAxis === 'y') {
+    fw = u.width; fh = u.depth; offset = (u.height / 2 + 0.004) * faceInfo.sign;
+    localPos.set(0, offset, 0);
+    localQuat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+  } else if (faceInfo.localAxis === 'x') {
+    fw = u.depth; fh = u.height; offset = (u.width / 2 + 0.004) * faceInfo.sign;
+    localPos.set(offset, 0, 0);
+    localQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  } else {
+    fw = u.width; fh = u.height; offset = (u.depth / 2 + 0.004) * faceInfo.sign;
+    localPos.set(0, 0, offset);
+  }
+
+  m.updateMatrixWorld();
+  faceHighlightMesh.position.copy(localPos.applyMatrix4(m.matrixWorld));
+  const worldQuat = new THREE.Quaternion();
+  m.getWorldQuaternion(worldQuat);
+  faceHighlightMesh.quaternion.copy(worldQuat).multiply(localQuat);
+  faceHighlightMesh.scale.set(fw, fh, 1);
+  faceHighlightMesh.visible = true;
+}
+
+// ============================================================================
+// SELECTION, MULTI-SELECT, GROUPS & LINKED COMPONENTS
+// ============================================================================
+function findRootObject(obj) {
+  while (obj && obj.parent && obj.parent !== scene) {
+    obj = obj.parent;
+  }
+  return obj;
+}
+
+function clearSelection() {
+  selectedObjects.forEach(obj => setObjectHighlight(obj, false));
+  selectedObjects.length = 0;
+  faceHighlightMesh.visible = false;
+  updateContextBarUI();
+}
+
+function selectObject(obj, toggleInMulti = false) {
+  if (!obj) {
+    if (!multiSelectMode) clearSelection();
+    return;
+  }
+  const root = findRootObject(obj);
+  if (multiSelectMode || toggleInMulti) {
+    const idx = selectedObjects.indexOf(root);
+    if (idx > -1) {
+      setObjectHighlight(root, false);
+      selectedObjects.splice(idx, 1);
+    } else {
+      selectedObjects.push(root);
+      setObjectHighlight(root, true);
+    }
+  } else {
+    clearSelection();
+    selectedObjects.push(root);
+    setObjectHighlight(root, true);
+  }
+  updateContextBarUI();
+  renderOutliner();
+}
+
+function selectAllObjects() {
+  clearSelection();
+  objects.forEach(obj => {
+    selectedObjects.push(obj);
+    setObjectHighlight(obj, true);
+  });
+  updateContextBarUI();
+  renderOutliner();
+}
+
+function setObjectHighlight(root, isSel) {
+  root.traverse(child => {
+    if (child.isMesh && child.name !== 'archEdges') {
+      if (child.userData.isArchVolume) {
+        updateEdgeLines(child, isSel);
+      } else if (child.material) {
+        child.material.emissive = new THREE.Color(isSel ? 0x3D2B1F : 0x000000);
+      }
+    }
+  });
+}
+
+function updateContextBarUI() {
+  if (selectedObjects.length === 0) {
+    contextBar.style.display = 'none';
+    return;
+  }
+  contextBar.style.display = 'flex';
+
+  const first = selectedObjects[0];
+  const isSingle = selectedObjects.length === 1;
+  const isGroup = isSingle && first.userData.isGroup;
+  const isComp = isSingle && !!first.userData.componentId;
+
+  document.getElementById('ctx-group').style.display = (selectedObjects.length >= 2 || (!isGroup && !isComp)) ? 'flex' : 'none';
+  document.getElementById('ctx-ungroup').style.display = (isGroup || isComp) ? 'flex' : 'none';
+  document.getElementById('ctx-comp').style.display = !isComp ? 'flex' : 'none';
+  document.getElementById('ctx-unique').style.display = isComp ? 'flex' : 'none';
+
+  if (selectedObjects.length > 1) {
+    hudText.textContent = `${selectedObjects.length} Objects Selected • Tap Group or Make Component`;
+  } else if (isComp) {
+    const compDef = componentRegistry[first.userData.componentId];
+    const count = compDef ? compDef.instances.length : 1;
+    hudText.textContent = `❖ ${first.userData.name || 'Component'} (${count} linked inst.)`;
+  } else if (isGroup) {
+    hudText.textContent = `⊞ ${first.userData.name || 'Group'} (${first.children.length} parts)`;
+  } else if (first.userData.isArchVolume) {
+    const u = first.userData;
+    hudText.textContent = `${u.name || 'Volume'}: ${u.width.toFixed(2)} × ${u.depth.toFixed(2)} × ${u.height.toFixed(2)}m`;
+  } else {
+    hudText.textContent = `${first.userData.name || 'Object'} Selected`;
+  }
+}
+
+// Group Selected Objects
+function groupSelectedObjects() {
+  if (selectedObjects.length === 0) return;
+
+  const group = new THREE.Group();
+  const box = new THREE.Box3();
+  selectedObjects.forEach(obj => box.expandByObject(obj));
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+
+  group.position.copy(center);
+  group.userData = {
+    isGroup: true,
+    name: `Group #${groupCounter++}`,
+    componentId: null
+  };
+
+  selectedObjects.forEach(obj => {
+    const idx = objects.indexOf(obj);
+    if (idx > -1) objects.splice(idx, 1);
+    scene.attach(obj);
+    group.attach(obj);
+  });
+
+  scene.add(group);
+  objects.push(group);
+  selectObject(group, false);
+  hudText.textContent = `Created ${group.userData.name}`;
+}
+
+// Ungroup / Explode Group or Component
+function ungroupSelectedObject() {
+  if (selectedObjects.length !== 1) return;
+  const target = selectedObjects[0];
+
+  // If it's a single-mesh component, just detach from component definition
+  if (!target.isGroup && !(target instanceof THREE.Group)) {
+    if (target.userData.componentId) {
+      detachFromComponent(target);
+      updateContextBarUI();
+    }
+    return;
+  }
+
+  if (target.userData.componentId) {
+    detachFromComponent(target);
+  }
+
+  const children = [...target.children].filter(c => c.name !== 'archEdges');
+  const unpacked = [];
+  children.forEach(child => {
+    scene.attach(child);
+    objects.push(child);
+    unpacked.push(child);
+  });
+
+  const idx = objects.indexOf(target);
+  if (idx > -1) objects.splice(idx, 1);
+  scene.remove(target);
+
+  clearSelection();
+  unpacked.forEach(c => selectObject(c, true));
+  hudText.textContent = `Ungrouped into ${unpacked.length} objects`;
+}
+
+// Make Component (SketchUp-style linked definition)
+function makeComponentFromSelected() {
+  if (selectedObjects.length === 0) return;
+  let root = selectedObjects[0];
+  if (selectedObjects.length > 1) {
+    groupSelectedObjects();
+    root = selectedObjects[0];
+  }
+
+  const defaultName = root.userData.name && !root.userData.name.startsWith('Group')
+    ? root.userData.name
+    : `Component #${componentCounter++}`;
+  const compId = 'comp_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+
+  root.userData.componentId = compId;
+  root.userData.name = defaultName;
+
+  componentRegistry[compId] = {
+    id: compId,
+    name: defaultName,
+    instances: [root]
+  };
+
+  setObjectHighlight(root, true);
+  updateContextBarUI();
+  if (activeCatalogTab === 'components') renderCatalog('components');
+  hudText.textContent = `❖ Created Component "${defaultName}" • Duplicate to place linked instances`;
+}
+
+function detachFromComponent(obj) {
+  const compId = obj.userData.componentId;
+  if (!compId || !componentRegistry[compId]) return;
+  const arr = componentRegistry[compId].instances;
+  const i = arr.indexOf(obj);
+  if (i > -1) arr.splice(i, 1);
+  obj.userData.componentId = null;
+  setObjectHighlight(obj, selectedObjects.includes(obj));
+}
+
+function deepCloneSceneObject(source) {
+  if (source.userData.isArchVolume) {
+    const u = source.userData;
+    const copy = createArchVolume(u.width, u.height, u.depth, source.position.clone(), u.matIndex, u.name, false);
+    copy.quaternion.copy(source.quaternion);
+    copy.scale.copy(source.scale);
+    return copy;
+  }
+
+  const clone = source.clone(true);
+  clone.userData = JSON.parse(JSON.stringify(source.userData));
+  // Clone materials & geometries uniquely so non-component edits don't bleed
+  const srcMeshes = [];
+  const dstMeshes = [];
+  source.traverse(c => { if (c.isMesh && c.name !== 'archEdges') srcMeshes.push(c); });
+  clone.traverse(c => { if (c.isMesh && c.name !== 'archEdges') dstMeshes.push(c); });
+
+  for (let i = 0; i < dstMeshes.length; i++) {
+    const sm = srcMeshes[i];
+    const dm = dstMeshes[i];
+    dm.geometry = sm.geometry.clone();
+    dm.material = sm.material.clone();
+    dm.userData = JSON.parse(JSON.stringify(sm.userData));
+    if (dm.userData.isArchVolume) updateEdgeLines(dm, false);
+  }
+  return clone;
+}
+
+// Propagate edits (Material, Push/Pull dimensions, Scale) across all instances of a Component
+function propagateComponentChange(changedInstance) {
+  const compId = changedInstance.userData.componentId;
+  if (!compId || !componentRegistry[compId]) return;
+  const instances = componentRegistry[compId].instances;
+
+  const srcMeshes = [];
+  changedInstance.traverse(c => { if (c.isMesh && c.name !== 'archEdges') srcMeshes.push(c); });
+
+  instances.forEach(inst => {
+    if (inst === changedInstance) return;
+    inst.scale.copy(changedInstance.scale);
+
+    const dstMeshes = [];
+    inst.traverse(c => { if (c.isMesh && c.name !== 'archEdges') dstMeshes.push(c); });
+
+    for (let i = 0; i < Math.min(srcMeshes.length, dstMeshes.length); i++) {
+      const sm = srcMeshes[i];
+      const dm = dstMeshes[i];
+      dm.material.color.copy(sm.material.color);
+      dm.material.roughness = sm.material.roughness;
+      dm.material.metalness = sm.material.metalness;
+      dm.material.transparent = sm.material.transparent;
+      dm.material.opacity = sm.material.opacity;
+      dm.material.needsUpdate = true;
+      dm.userData.matIndex = sm.userData.matIndex;
+
+      if (sm.userData.isArchVolume && dm.userData.isArchVolume) {
+        if (
+          dm.userData.width !== sm.userData.width ||
+          dm.userData.height !== sm.userData.height ||
+          dm.userData.depth !== sm.userData.depth
+        ) {
+          resizeArchVolume(dm, sm.userData.width, sm.userData.height, sm.userData.depth, false);
+        }
+      }
+    }
+  });
+}
+
+function duplicateSelected() {
+  if (selectedObjects.length === 0) return;
+  const newSelection = [];
+
+  selectedObjects.forEach(orig => {
+    const clone = deepCloneSceneObject(orig);
+    clone.position.add(new THREE.Vector3(snapStep * 4, 0, snapStep * 4));
+    scene.add(clone);
+    objects.push(clone);
+
+    // If original is a Component, register the duplicate as a linked instance!
+    if (orig.userData.componentId && componentRegistry[orig.userData.componentId]) {
+      clone.userData.componentId = orig.userData.componentId;
+      componentRegistry[orig.userData.componentId].instances.push(clone);
+    }
+    newSelection.push(clone);
+  });
+
+  clearSelection();
+  newSelection.forEach(obj => selectObject(obj, true));
+  hudText.textContent = `Duplicated ${newSelection.length} item(s)`;
+}
+
+// ============================================================================
+// POINTER & TOUCH INTERACTION: DRAW ON ANY FACE & EXTRUDE (PUSH/PULL)
+// ============================================================================
+function snap(val) {
+  return Math.round(val / snapStep) * snapStep;
+}
+
+function updateRaycaster(clientX, clientY, useOffset = false) {
+  const offsetY = useOffset ? clientY - RETICLE_OFFSET_Y : clientY;
+  if (useOffset) {
+    reticle.style.display = 'block';
+    reticle.style.left = clientX + 'px';
+    reticle.style.top = offsetY + 'px';
+  }
+  pointer.x = (clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(offsetY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+}
+
+function onPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  closeDrawers();
+
+  // 1. SELECT / ORBIT MODE
+  if (currentTool === 'orbit') {
+    const faceInfo = detectHitFace(e.clientX, e.clientY, false);
+    if (faceInfo && !faceInfo.isGround) {
+      selectObject(faceInfo.root, false);
+      showFaceHighlight(faceInfo);
+    } else {
+      clearSelection();
+    }
+    return;
+  }
+
+  // 2. DRAW ON ANY FACE MODE (Floor, Wall, Tabletop, Ceiling, Cabinet Face)
+  if (currentTool === 'drawface') {
+    const faceInfo = detectHitFace(e.clientX, e.clientY, true);
+    if (!faceInfo) return;
+
+    activeFaceInfo = faceInfo;
+    showFaceHighlight(faceInfo);
+    isDragging = true;
+
+    // Snap starting point on the face plane
+    drawStartPoint = faceInfo.hitPoint.clone();
+    const initialThick = 0.02;
+
+    // Create new volume aligned with the target face's local coordinate system
+    // Local +Y of the new volume points along the face's outward worldNormal!
+    const centerPos = drawStartPoint.clone().addScaledVector(faceInfo.worldNormal, initialThick / 2);
+    previewMesh = createArchVolume(snapStep, initialThick, snapStep, centerPos, activeMatIndex, 'Drawn Element', true);
+
+    // Orient previewMesh so its local X = basisU, local Y = worldNormal, local Z = basisV
+    const rotMatrix = new THREE.Matrix4().makeBasis(faceInfo.basisU, faceInfo.worldNormal, faceInfo.basisV);
+    previewMesh.quaternion.setFromRotationMatrix(rotMatrix);
+
+    selectObject(previewMesh, false);
+    hudText.textContent = `Drawing on ${faceInfo.faceLabel} • Drag to size`;
+    return;
+  }
+
+  // 3. PUSH / PULL (EXTRUDE ANY FACE ALONG ITS NORMAL)
+  if (currentTool === 'pushpull') {
+    const faceInfo = detectHitFace(e.clientX, e.clientY, false);
+    if (!faceInfo || faceInfo.isGround) {
+      hudText.textContent = 'Tap any face of a wall, slab, or drawn shape to extrude';
+      return;
+    }
+
+    const targetMesh = faceInfo.mesh;
+    selectObject(faceInfo.root, false);
+    showFaceHighlight(faceInfo);
+
+    if (!targetMesh.userData.isArchVolume) {
+      hudText.textContent = 'Selected object is a mesh • Use Scale + / − above';
+      return;
+    }
+
+    isDragging = true;
+    const u = targetMesh.userData;
+    const startDim = faceInfo.localAxis === 'x' ? u.width : (faceInfo.localAxis === 'y' ? u.height : u.depth);
+
+    // Compute screen-space direction of the face's outward worldNormal so dragging feels natural in 3D
+    const p0 = faceInfo.hitPoint.clone().project(camera);
+    const p1 = faceInfo.hitPoint.clone().add(faceInfo.worldNormal).project(camera);
+    const screenDir = new THREE.Vector2(
+      (p1.x - p0.x) * (window.innerWidth / 2),
+      -(p1.y - p0.y) * (window.innerHeight / 2)
+    );
+    if (screenDir.lengthSq() < 0.001) screenDir.set(0, -1);
+    else screenDir.normalize();
+
+    pushPullState = {
+      faceInfo,
+      mesh: targetMesh,
+      localAxis: faceInfo.localAxis,
+      sign: faceInfo.sign,
+      worldNormal: faceInfo.worldNormal.clone(),
+      screenDir,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startDim,
+      startWorldPos: targetMesh.position.clone()
+    };
+    return;
+  }
+
+  // 4. MOVE MODE
+  if (currentTool === 'move') {
+    const faceInfo = detectHitFace(e.clientX, e.clientY, false);
+    if (faceInfo && !faceInfo.isGround) {
+      if (!selectedObjects.includes(faceInfo.root)) {
+        selectObject(faceInfo.root, false);
+      }
+      isDragging = true;
+      const movePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -faceInfo.hitPoint.y);
+      const pt = new THREE.Vector3();
+      raycaster.ray.intersectPlane(movePlane, pt);
+
+      const startPositions = new Map();
+      selectedObjects.forEach(obj => startPositions.set(obj, obj.position.clone()));
+
+      moveState = {
+        plane: movePlane,
+        startPt: pt.clone(),
+        startPositions
+      };
+    }
+  }
+}
+
+function onPointerMove(e) {
+  if (!isDragging) return;
+
+  // 1. DRAW ON FACE DRAG
+  if (currentTool === 'drawface' && previewMesh && activeFaceInfo && drawStartPoint) {
+    updateRaycaster(e.clientX, e.clientY, true);
+    const pt = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(activeFaceInfo.plane, pt)) {
+      const delta = pt.clone().sub(drawStartPoint);
+      const rawU = delta.dot(activeFaceInfo.basisU);
+      const rawV = delta.dot(activeFaceInfo.basisV);
+
+      const snappedU = snap(rawU);
+      const snappedV = snap(rawV);
+
+      const w = Math.max(snapStep, Math.abs(snappedU));
+      const d = Math.max(snapStep, Math.abs(snappedV));
+      const thick = 0.02;
+
+      const centerOnFace = drawStartPoint.clone()
+        .addScaledVector(activeFaceInfo.basisU, snappedU / 2)
+        .addScaledVector(activeFaceInfo.basisV, snappedV / 2)
+        .addScaledVector(activeFaceInfo.worldNormal, thick / 2);
+
+      previewMesh.position.copy(centerOnFace);
+      resizeArchVolume(previewMesh, w, thick, d, false);
+
+      const area = (w * d).toFixed(2);
+      hudText.textContent = `${activeFaceInfo.faceLabel}: ${w.toFixed(2)}m × ${d.toFixed(2)}m (${area} m²)`;
+    }
+    return;
+  }
+
+  // 2. PUSH / PULL EXTRUDE DRAG ALONG FACE NORMAL
+  if (currentTool === 'pushpull' && pushPullState) {
+    const st = pushPullState;
+    const moveVec = new THREE.Vector2(e.clientX - st.startClientX, e.clientY - st.startClientY);
+    const projectedPixels = moveVec.dot(st.screenDir);
+    const deltaMeters = snap(projectedPixels * 0.025);
+
+    const newDim = Math.max(0.02, snap(st.startDim + deltaMeters));
+    const actualDelta = newDim - st.startDim;
+
+    const u = st.mesh.userData;
+    let nw = u.width, nh = u.height, nd = u.depth;
+    if (st.localAxis === 'x') nw = newDim;
+    else if (st.localAxis === 'y') nh = newDim;
+    else nd = newDim;
+
+    // Shift center along worldNormal by actualDelta / 2 so opposite face stays anchored!
+    if (st.mesh.parent === scene) {
+      st.mesh.position.copy(st.startWorldPos).addScaledVector(st.worldNormal, actualDelta / 2);
+    } else {
+      // Mesh inside a Group/Component: shift along local axis
+      const localShift = new THREE.Vector3();
+      localShift[st.localAxis] = st.sign * (actualDelta / 2);
+      st.mesh.position.copy(st.startWorldPos).add(localShift);
+    }
+
+    resizeArchVolume(st.mesh, nw, nh, nd, true);
+    showFaceHighlight(st.faceInfo);
+
+    hudText.textContent = `Extrude (${st.faceInfo.faceLabel}): ${newDim.toFixed(2)}m (Δ ${(actualDelta >= 0 ? '+' : '') + actualDelta.toFixed(2)}m)`;
+    return;
+  }
+
+  // 3. MOVE DRAG
+  if (currentTool === 'move' && moveState) {
+    updateRaycaster(e.clientX, e.clientY, true);
+    const pt = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(moveState.plane, pt)) {
+      const delta = pt.sub(moveState.startPt);
+      const dx = snap(delta.x);
+      const dz = snap(delta.z);
+
+      moveState.startPositions.forEach((startPos, obj) => {
+        obj.position.x = startPos.x + dx;
+        obj.position.z = startPos.z + dz;
+      });
+
+      const first = selectedObjects[0];
+      if (first) {
+        hudText.textContent = `Move X: ${first.position.x.toFixed(2)}m, Z: ${first.position.z.toFixed(2)}m`;
+      }
+    }
+  }
+}
+
+function onPointerUp() {
+  if (!isDragging) return;
+  isDragging = false;
+  reticle.style.display = 'none';
+
+  if (currentTool === 'drawface' && previewMesh) {
+    hudText.textContent = `Face drawn • Switch to Extrude (Push/Pull) to pull it out`;
+    previewMesh = null;
+    activeFaceInfo = null;
+  }
+  pushPullState = null;
+  moveState = null;
+}
+
+// ============================================================================
+// PREMADE STANDARD INTERIOR DESIGN OBJECTS & ROOM SHELL GENERATOR
+// ============================================================================
+function spawnStarterInterior() {
+  // Create a warm, inviting starter interior room so the user immediately sees the aesthetic
+  spawnCatalogItem('room_shell', new THREE.Vector3(0, 0, 0), false);
+  spawnCatalogItem('rug_large', new THREE.Vector3(0.2, 0, 0.3), false);
+  spawnCatalogItem('sofa_3seat', new THREE.Vector3(0.2, 0, -1.1), false);
+  spawnCatalogItem('coffee_table', new THREE.Vector3(0.2, 0, 0.2), false);
+  spawnCatalogItem('plant_pot', new THREE.Vector3(-1.7, 0, -1.2), false);
+  spawnCatalogItem('floor_lamp', new THREE.Vector3(1.75, 0, -1.2), false);
+  clearSelection();
+}
+
+function spawnRoomShell() {
+  closeDrawers();
+  spawnCatalogItem('room_shell', new THREE.Vector3(0, 0, 0), true);
+}
+
+function addPart(group, w, h, d, x, y, z, matIdx, partName = 'Part') {
+  const m = createArchVolume(w, h, d, new THREE.Vector3(x, y, z), matIdx, partName, false);
+  group.add(m);
+  return m;
+}
+
+function spawnCatalogItem(itemId, customPos = null, selectAfter = true) {
+  closeDrawers();
+  const group = new THREE.Group();
+  let itemName = 'Interior Object';
+
+  if (itemId === 'room_shell') {
+    itemName = 'Room Shell (5×4m)';
+    // Floor Slab (White Oak)
+    addPart(group, 5.0, 0.12, 4.0, 0, 0.06, 0, 3, 'Oak Floor');
+    // Back Wall (Chalk White, 2.7m high)
+    addPart(group, 5.0, 2.70, 0.16, 0, 1.47, -1.92, 0, 'North Wall');
+    // Left Wall (Warm Beige, 2.7m high)
+    addPart(group, 0.16, 2.70, 3.84, -2.42, 1.47, 0.08, 1, 'West Wall');
+  } else if (itemId === 'wall_straight') {
+    const wall = createArchVolume(3.0, 2.70, 0.15, new THREE.Vector3(0, 1.35, 0), 0, 'Partition Wall', true);
+    if (selectAfter) selectObject(wall, false);
+    return wall;
+  } else if (itemId === 'door_interior') {
+    itemName = 'Interior Doorway';
+    addPart(group, 0.08, 2.10, 0.16, -0.46, 1.05, 0, 3, 'Left Frame');
+    addPart(group, 0.08, 2.10, 0.16, 0.46, 1.05, 0, 3, 'Right Frame');
+    addPart(group, 1.00, 0.08, 0.16, 0, 2.06, 0, 3, 'Header Frame');
+    addPart(group, 0.84, 2.02, 0.04, 0, 1.01, 0, 0, 'Door Leaf');
+    addPart(group, 0.12, 0.03, 0.08, 0.32, 1.00, 0.04, 10, 'Brass Handle');
+  } else if (itemId === 'window_casement') {
+    itemName = 'Picture Window';
+    // Frame + Clear Glass placed at sill height 0.9m
+    addPart(group, 1.60, 0.08, 0.18, 0, 0.94, 0, 11, 'Sill');
+    addPart(group, 1.60, 0.08, 0.18, 0, 2.26, 0, 11, 'Header');
+    addPart(group, 0.08, 1.40, 0.18, -0.76, 1.60, 0, 11, 'Jamb L');
+    addPart(group, 0.08, 1.40, 0.18, 0.76, 1.60, 0, 11, 'Jamb R');
+    addPart(group, 1.44, 1.24, 0.03, 0, 1.60, 0, 13, 'Window Glass');
+  } else if (itemId === 'column_round') {
+    const col = createArchVolume(0.35, 2.70, 0.35, new THREE.Vector3(0, 1.35, 0), 2, 'Travertine Column', true);
+    if (selectAfter) selectObject(col, false);
+    return col;
+  } else if (itemId === 'stair_floating') {
+    itemName = 'Floating Stair';
+    for (let i = 0; i < 13; i++) {
+      addPart(group, 1.10, 0.06, 0.28, 0, 0.18 + i * 0.20, -1.5 + i * 0.25, 3, `Tread ${i + 1}`);
+    }
+  } else if (itemId === 'sofa_3seat') {
+    itemName = '3-Seater Bouclé Sofa';
+    addPart(group, 2.20, 0.28, 0.92, 0, 0.18, 0, 5, 'Sofa Base');
+    addPart(group, 1.92, 0.16, 0.76, 0, 0.38, 0.06, 5, 'Seat Cushion');
+    addPart(group, 2.20, 0.48, 0.22, 0, 0.54, -0.35, 5, 'Backrest');
+    addPart(group, 0.18, 0.42, 0.92, -1.01, 0.45, 0, 5, 'Armrest L');
+    addPart(group, 0.18, 0.42, 0.92, 1.01, 0.45, 0, 5, 'Armrest R');
+  } else if (itemId === 'sofa_sectional') {
+    itemName = 'L-Shape Sectional';
+    addPart(group, 2.60, 0.38, 0.92, 0, 0.22, -0.40, 6, 'Main Seat');
+    addPart(group, 0.95, 0.38, 0.85, 0.825, 0.22, 0.48, 6, 'Chaise');
+    addPart(group, 2.60, 0.42, 0.22, 0, 0.58, -0.75, 6, 'Backrest');
+    addPart(group, 0.18, 0.38, 0.92, -1.21, 0.48, -0.40, 6, 'Arm L');
+  } else if (itemId === 'armchair') {
+    itemName = 'Accent Lounge Chair';
+    addPart(group, 0.82, 0.36, 0.84, 0, 0.22, 0, 7, 'Chair Seat');
+    addPart(group, 0.82, 0.44, 0.20, 0, 0.54, -0.32, 7, 'Chair Back');
+    addPart(group, 0.14, 0.38, 0.84, -0.34, 0.44, 0, 3, 'Timber Arm L');
+    addPart(group, 0.14, 0.38, 0.84, 0.34, 0.44, 0, 3, 'Timber Arm R');
+  } else if (itemId === 'coffee_table') {
+    itemName = 'Travertine Coffee Table';
+    addPart(group, 1.20, 0.05, 0.65, 0, 0.34, 0, 2, 'Tabletop');
+    addPart(group, 0.28, 0.32, 0.45, -0.34, 0.16, 0, 2, 'Plinth L');
+    addPart(group, 0.28, 0.32, 0.45, 0.34, 0.16, 0, 2, 'Plinth R');
+  } else if (itemId === 'credenza') {
+    itemName = 'Oak Media Console';
+    addPart(group, 1.80, 0.40, 0.45, 0, 0.32, 0, 3, 'Cabinet Body');
+    addPart(group, 1.82, 0.03, 0.46, 0, 0.53, 0, 9, 'Marble Top');
+    addPart(group, 0.04, 0.12, 0.38, -0.78, 0.06, 0, 11, 'Leg L');
+    addPart(group, 0.04, 0.12, 0.38, 0.78, 0.06, 0, 11, 'Leg R');
+  } else if (itemId === 'bookshelf') {
+    itemName = 'Open Shelving Unit';
+    addPart(group, 0.04, 2.00, 0.36, -0.48, 1.00, 0, 4, 'Upright L');
+    addPart(group, 0.04, 2.00, 0.36, 0.48, 1.00, 0, 4, 'Upright R');
+    for (let i = 0; i < 5; i++) {
+      addPart(group, 0.96, 0.03, 0.35, 0, 0.15 + i * 0.44, 0, 3, `Shelf ${i + 1}`);
+    }
+  } else if (itemId === 'rug_large') {
+    const rug = createArchVolume(3.00, 0.015, 2.00, customPos || new THREE.Vector3(0, 0.128, 0), 1, 'Woven Area Rug', true);
+    if (selectAfter) selectObject(rug, false);
+    return rug;
+  } else if (itemId === 'kitchen_island') {
+    itemName = 'Waterfall Island';
+    addPart(group, 2.02, 0.86, 0.90, 0, 0.43, 0, 3, 'Oak Base');
+    addPart(group, 2.10, 0.05, 0.96, 0, 0.885, 0, 9, 'Carrara Counter');
+    addPart(group, 0.05, 0.86, 0.96, -1.025, 0.43, 0, 9, 'Waterfall L');
+    addPart(group, 0.05, 0.86, 0.96, 1.025, 0.43, 0, 9, 'Waterfall R');
+  } else if (itemId === 'kitchen_counter') {
+    itemName = 'Kitchen Base Run';
+    addPart(group, 2.40, 0.86, 0.60, 0, 0.43, 0, 1, 'Cabinet Run');
+    addPart(group, 2.42, 0.04, 0.62, 0, 0.88, 0, 9, 'Stone Worktop');
+    addPart(group, 2.40, 0.60, 0.02, 0, 1.20, -0.30, 2, 'Backsplash');
+  } else if (itemId === 'dining_table') {
+    itemName = '6-Seat Dining Table';
+    addPart(group, 1.90, 0.04, 0.95, 0, 0.73, 0, 4, 'Walnut Tabletop');
+    [[-0.82, -0.38], [0.82, -0.38], [-0.82, 0.38], [0.82, 0.38]].forEach(([x, z], i) => {
+      addPart(group, 0.06, 0.71, 0.06, x, 0.355, z, 4, `Leg ${i + 1}`);
+    });
+  } else if (itemId === 'dining_chair') {
+    itemName = 'Wishbone Dining Chair';
+    addPart(group, 0.48, 0.04, 0.46, 0, 0.45, 0, 5, 'Woven Seat');
+    addPart(group, 0.48, 0.34, 0.04, 0, 0.64, -0.21, 3, 'Curved Back');
+    [[-0.21, -0.20], [0.21, -0.20], [-0.21, 0.20], [0.21, 0.20]].forEach(([x, z], i) => {
+      addPart(group, 0.04, 0.44, 0.04, x, 0.22, z, 3, `Chair Leg ${i + 1}`);
+    });
+  } else if (itemId === 'bar_stool') {
+    itemName = 'Counter Stool';
+    addPart(group, 0.38, 0.05, 0.38, 0, 0.64, 0, 4, 'Stool Seat');
+    [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]].forEach(([x, z]) => {
+      addPart(group, 0.03, 0.62, 0.03, x, 0.31, z, 11, 'Stool Leg');
+    });
+  } else if (itemId === 'fridge') {
+    itemName = 'Built-in Fridge';
+    addPart(group, 0.90, 2.00, 0.72, 0, 1.00, 0, 12, 'Fridge Body');
+    addPart(group, 0.02, 0.80, 0.04, -0.04, 1.35, 0.37, 10, 'Handle L');
+    addPart(group, 0.02, 0.80, 0.04, 0.04, 1.35, 0.37, 10, 'Handle R');
+  } else if (itemId === 'queen_bed') {
+    itemName = 'Upholstered Queen Bed';
+    addPart(group, 1.70, 0.28, 2.10, 0, 0.14, 0.04, 6, 'Bed Frame');
+    addPart(group, 1.54, 0.24, 1.96, 0, 0.36, 0.06, 0, 'Mattress');
+    addPart(group, 1.74, 1.05, 0.14, 0, 0.525, -0.98, 6, 'Headboard');
+    addPart(group, 0.62, 0.12, 0.38, -0.38, 0.52, -0.68, 5, 'Pillow L');
+    addPart(group, 0.62, 0.12, 0.38, 0.38, 0.52, -0.68, 5, 'Pillow R');
+  } else if (itemId === 'nightstand') {
+    itemName = 'Bedside Table';
+    addPart(group, 0.50, 0.50, 0.42, 0, 0.25, 0, 3, 'Nightstand');
+  } else if (itemId === 'wardrobe') {
+    itemName = 'Double Wardrobe';
+    addPart(group, 1.60, 2.20, 0.60, 0, 1.10, 0, 1, 'Wardrobe Carcass');
+    addPart(group, 0.02, 0.90, 0.03, -0.04, 1.10, 0.31, 10, 'Pull L');
+    addPart(group, 0.02, 0.90, 0.03, 0.04, 1.10, 0.31, 10, 'Pull R');
+  } else if (itemId === 'work_desk') {
+    itemName = 'Architect Desk';
+    addPart(group, 1.50, 0.04, 0.70, 0, 0.73, 0, 3, 'Desk Top');
+    addPart(group, 0.05, 0.71, 0.64, -0.68, 0.355, 0, 11, 'Frame L');
+    addPart(group, 0.42, 0.71, 0.66, 0.50, 0.355, 0, 3, 'Drawer Pedestal');
+  } else if (itemId === 'bathtub') {
+    itemName = 'Freestanding Tub';
+    addPart(group, 1.70, 0.58, 0.80, 0, 0.29, 0, 0, 'Tub Basin');
+    addPart(group, 0.06, 0.72, 0.06, 0, 0.36, -0.44, 10, 'Brass Filler');
+  } else if (itemId === 'vanity') {
+    itemName = 'Vanity & Mirror';
+    addPart(group, 1.10, 0.55, 0.52, 0, 0.55, 0, 4, 'Floating Vanity');
+    addPart(group, 1.12, 0.04, 0.54, 0, 0.84, 0, 9, 'Marble Basin Top');
+    addPart(group, 0.90, 0.95, 0.03, 0, 1.50, -0.24, 13, 'Wall Mirror');
+  } else if (itemId === 'floor_lamp') {
+    itemName = 'Brass Floor Lamp';
+    addPart(group, 0.34, 0.03, 0.34, 0, 0.015, 0, 9, 'Marble Base');
+    addPart(group, 0.03, 1.45, 0.03, 0, 0.74, 0, 10, 'Brass Stem');
+    addPart(group, 0.42, 0.28, 0.42, 0, 1.50, 0, 5, 'Linen Shade');
+  } else if (itemId === 'plant_pot') {
+    itemName = 'Olive Tree in Planter';
+    addPart(group, 0.42, 0.44, 0.42, 0, 0.22, 0, 2, 'Ceramic Planter');
+    addPart(group, 0.07, 0.85, 0.07, 0, 0.80, 0, 4, 'Trunk');
+    addPart(group, 0.68, 0.65, 0.68, 0, 1.32, 0, 15, 'Foliage Canopy');
+  } else if (itemId === 'human_scale') {
+    itemName = 'Scale Figure (1.75m)';
+    addPart(group, 0.36, 1.42, 0.24, 0, 0.71, 0, 11, 'Figure Torso');
+    addPart(group, 0.22, 0.24, 0.22, 0, 1.60, 0, 2, 'Figure Head');
+  }
+
+  group.userData = {
+    isGroup: true,
+    name: itemName,
+    componentId: null
+  };
+
+  if (customPos) {
+    group.position.copy(customPos);
+    if (itemId !== 'room_shell') group.position.y = 0.12; // Sit on top of room floor slab
+  } else {
+    // Check if room floor exists so furniture drops neatly onto the interior floor
+    group.position.set(0, 0.12, 0);
+  }
+
+  scene.add(group);
+  objects.push(group);
+  if (selectAfter) selectObject(group, false);
+  return group;
+}
+
+// ============================================================================
+// UI SETUP, CATALOG RENDERING, OUTLINER & NUMERIC KEY-IN
+// ============================================================================
+function renderCatalog(cat) {
+  activeCatalogTab = cat;
+  document.querySelectorAll('.cat-tab').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
+  const content = document.getElementById('catalog-content');
+  content.innerHTML = '';
+
+  if (cat === 'components') {
+    const comps = Object.values(componentRegistry);
+    if (comps.length === 0) {
+      content.innerHTML = `
+        <div class="wh-card" style="margin-top:0;">
+          <h4>No Custom Components Yet</h4>
+          <p>Select any furniture piece, group, or drawn volume and tap <strong>❖ Make Component</strong> in the toolbar. All instances of a component update together when you edit their material or dimensions!</p>
+        </div>`;
+      return;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'asset-grid';
+    comps.forEach(c => {
+      const card = document.createElement('div');
+      card.className = 'asset-item';
+      card.innerHTML = `
+        <div class="asset-icon">❖</div>
+        <div class="asset-name">${c.name}</div>
+        <div class="asset-dim">${c.instances.length} linked inst.</div>
+      `;
+      card.onclick = () => {
+        if (c.instances.length > 0) {
+          clearSelection();
+          selectObject(c.instances[0], false);
+          duplicateSelected();
+          closeDrawers();
+        }
+      };
+      grid.appendChild(card);
+    });
+    content.appendChild(grid);
+    return;
+  }
+
+  if (cat === 'import') {
+    content.innerHTML = `
+      <div class="wh-card" style="margin-top:0;">
+        <h4>Import 3D Model (.GLB / .GLTF / .OBJ / .STL)</h4>
+        <p>Load any furniture or architectural fixture from your iPhone Files. Atelier 3D normalizes scale and places it on the floor.</p>
+        <button class="primary-action-btn" onclick="document.getElementById('file-input').click()">
+          📁 Choose 3D File from iPhone
+        </button>
+      </div>
+      <div class="wh-card">
+        <h4>Browse Trimble 3D Warehouse</h4>
+        <p>Search millions of free furniture & interior fixtures and download as <strong>GLB</strong>:</p>
+        <div style="display:flex; gap:6px;">
+          <input id="wh-search" type="text" placeholder="e.g. Eames lounge, pendant light..." style="flex:1; border-radius:10px; border:1px solid var(--panel-border); background:#fff; color:var(--text-main); padding:9px 11px; font-size:13px;">
+          <button class="ctx-btn primary" onclick="searchWarehouse()">Search ↗</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const list = CATALOG_ITEMS[cat] || [];
+  const grid = document.createElement('div');
+  grid.className = 'asset-grid';
+  list.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'asset-item';
+    div.innerHTML = `
+      <div class="asset-icon">${item.icon}</div>
+      <div class="asset-name">${item.name}</div>
+      <div class="asset-dim">${item.dim}</div>
+    `;
+    div.onclick = () => spawnCatalogItem(item.id);
+    grid.appendChild(div);
+  });
+  content.appendChild(grid);
+}
+
+function renderOutliner() {
+  const listEl = document.getElementById('outliner-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  if (objects.length === 0) {
+    listEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:8px;">Scene is empty.</div>';
+    return;
+  }
+
+  objects.slice().reverse().forEach(obj => {
+    const row = document.createElement('div');
+    const isSel = selectedObjects.includes(obj);
+    row.className = 'outliner-row' + (isSel ? ' selected' : '');
+
+    let badge = '<span class="badge-tag badge-vol">Volume</span>';
+    if (obj.userData.componentId) {
+      const comp = componentRegistry[obj.userData.componentId];
+      const cnt = comp ? comp.instances.length : 1;
+      badge = `<span class="badge-tag badge-comp">❖ Comp (${cnt})</span>`;
+    } else if (obj.userData.isGroup) {
+      badge = `<span class="badge-tag badge-group">⊞ Group (${obj.children.length})</span>`;
+    }
+
+    row.innerHTML = `
+      <span>${obj.userData.name || 'Object'}</span>
+      ${badge}
+    `;
+    row.onclick = () => {
+      selectObject(obj, multiSelectMode);
+    };
+    listEl.appendChild(row);
+  });
+}
+
+function buildMaterialSwatches() {
+  const swatchContainer = document.getElementById('swatch-container');
+  MATERIALS.forEach((m, idx) => {
+    const div = document.createElement('div');
+    div.className = 'swatch' + (m.light ? ' light-swatch' : '') + (idx === activeMatIndex ? ' active' : '');
+    div.style.background = '#' + m.color.toString(16).padStart(6, '0');
+    div.textContent = m.name;
+    div.addEventListener('click', () => {
+      activeMatIndex = idx;
+      document.querySelectorAll('.swatch').forEach((s, i) => s.classList.toggle('active', i === idx));
+
+      if (selectedObjects.length > 0) {
+        selectedObjects.forEach(root => {
+          root.traverse(child => {
+            if (child.isMesh && child.name !== 'archEdges') {
+              child.material.color.setHex(m.color);
+              child.material.roughness = m.roughness;
+              child.material.metalness = m.metalness;
+              child.material.transparent = !!m.transparent;
+              child.material.opacity = m.opacity;
+              child.material.needsUpdate = true;
+              child.userData.matIndex = idx;
+            }
+          });
+          if (root.userData.componentId) {
+            propagateComponentChange(root);
+          }
+        });
+        hudText.textContent = `Applied "${m.name}" finish`;
+      }
+      closeDrawers();
+    });
+    swatchContainer.appendChild(div);
+  });
+}
+
+function setupUIEvents() {
+  // Bottom Tool Switching
+  document.querySelectorAll('.tool-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tool = btn.dataset.tool;
+      if (tool === 'catalog') {
+        toggleDrawer('drawer-catalog');
+        return;
+      }
+      if (tool === 'materials') {
+        toggleDrawer('drawer-materials');
+        return;
+      }
+      closeDrawers();
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTool = tool;
+      controls.enabled = (tool === 'orbit');
+
+      const hints = {
+        orbit: 'Select & Orbit • Tap any object, 1-finger orbit, 2-finger pan',
+        drawface: 'Draw on Face • Drag on ANY wall, floor, or surface to sketch a 3D face',
+        pushpull: 'Extrude (Push/Pull) • Drag ANY face (wall, top, side) to extrude',
+        move: 'Move mode • Drag selected furniture or volume across the room'
+      };
+      hudText.textContent = hints[tool] || '';
+    });
+  });
+
+  // Catalog Category Tabs
+  document.querySelectorAll('.cat-tab').forEach(tab => {
+    tab.addEventListener('click', () => renderCatalog(tab.dataset.cat));
+  });
+
+  // Outliner Button
+  document.getElementById('btn-outliner').addEventListener('click', () => {
+    renderOutliner();
+    toggleDrawer('drawer-outliner');
+  });
+
+  // Multi-Select Toggle
+  const btnMulti = document.getElementById('btn-multi');
+  btnMulti.addEventListener('click', () => {
+    multiSelectMode = !multiSelectMode;
+    btnMulti.classList.toggle('active', multiSelectMode);
+    hudText.textContent = multiSelectMode
+      ? 'Multi-Select ON • Tap multiple objects to Group or Duplicate'
+      : 'Multi-Select OFF';
+  });
+
+  // Exact Numeric Key-In (Tap on Dimension Badge)
+  document.getElementById('dim-hud').addEventListener('click', () => {
+    if (selectedObjects.length === 0) {
+      alert('Select a volume or piece of furniture first, then tap here to enter exact dimensions.');
+      return;
+    }
+    const first = selectedObjects[0];
+    if (first.userData.isArchVolume) {
+      const u = first.userData;
+      const currentStr = `${u.width.toFixed(2)}, ${u.depth.toFixed(2)}, ${u.height.toFixed(2)}`;
+      const input = prompt('Enter Width, Depth, Height in meters (or single value for Height/Thickness):', currentStr);
+      if (!input) return;
+      const parts = input.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
+      if (parts.length === 1) {
+        resizeArchVolume(first, u.width, parts[0], u.depth, true);
+      } else if (parts.length >= 3) {
+        resizeArchVolume(first, parts[0], parts[2], parts[1], true);
+      }
+      updateContextBarUI();
+    } else {
+      const currentScale = first.scale.x.toFixed(2);
+      const input = prompt('Enter uniform scale factor for this Group/Component (e.g. 1.0, 1.25):', currentScale);
+      const val = parseFloat(input);
+      if (!isNaN(val) && val > 0.05) {
+        first.scale.setScalar(val);
+        if (first.userData.componentId) propagateComponentChange(first);
+      }
+    }
+  });
+
+  // Snap Increment Toggle
+  const btnSnap = document.getElementById('btn-snap');
+  btnSnap.addEventListener('click', () => {
+    snapIndex = (snapIndex + 1) % snapOptions.length;
+    snapStep = snapOptions[snapIndex];
+    btnSnap.textContent = `Snap: ${snapStep.toFixed(2)}m`;
+  });
+
+  // Camera Preset Views (Iso / Top Plan / Eye-Level Interior / Elevation)
+  let viewMode = 0;
+  const btnView = document.getElementById('btn-view');
+  btnView.addEventListener('click', () => {
+    viewMode = (viewMode + 1) % 4;
+    if (viewMode === 0) {
+      camera.position.set(8.5, 7.2, 9.5);
+      controls.target.set(0, 1.1, 0);
+      btnView.textContent = 'Iso';
+    } else if (viewMode === 1) {
+      camera.position.set(0, 14, 0.01);
+      controls.target.set(0, 0, 0);
+      btnView.textContent = 'Plan 2D';
+    } else if (viewMode === 2) {
+      camera.position.set(1.8, 1.65, 3.6);
+      controls.target.set(-0.2, 1.2, -1.0);
+      btnView.textContent = 'Eye 1.65m';
+    } else {
+      camera.position.set(0, 1.5, 10.5);
+      controls.target.set(0, 1.3, 0);
+      btnView.textContent = 'Front';
+    }
+    controls.update();
+  });
+
+  // Undo Button
+  document.getElementById('btn-undo').addEventListener('click', () => {
+    if (objects.length === 0) return;
+    const last = objects.pop();
+    if (last.userData.componentId) detachFromComponent(last);
+    scene.remove(last);
+    clearSelection();
+    hudText.textContent = 'Undid last item';
+  });
+
+  // Context Actions: Duplicate, Group, Ungroup, Component, Rotate, Floor Drop, Scale, Delete
+  document.getElementById('ctx-dup').addEventListener('click', duplicateSelected);
+  document.getElementById('ctx-group').addEventListener('click', groupSelectedObjects);
+  document.getElementById('ctx-ungroup').addEventListener('click', ungroupSelectedObject);
+  document.getElementById('ctx-comp').addEventListener('click', makeComponentFromSelected);
+  document.getElementById('ctx-unique').addEventListener('click', () => {
+    selectedObjects.forEach(obj => detachFromComponent(obj));
+    updateContextBarUI();
+    hudText.textContent = 'Detached instance (Now Unique)';
+  });
+
+  document.getElementById('ctx-rot45').addEventListener('click', () => {
+    selectedObjects.forEach(obj => obj.rotation.y += THREE.MathUtils.degToRad(45));
+  });
+  document.getElementById('ctx-rot90').addEventListener('click', () => {
+    selectedObjects.forEach(obj => obj.rotation.y += THREE.MathUtils.degToRad(90));
+  });
+  document.getElementById('ctx-ground').addEventListener('click', () => {
+    selectedObjects.forEach(obj => {
+      const box = new THREE.Box3().setFromObject(obj);
+      obj.position.y -= box.min.y;
+    });
+    hudText.textContent = 'Aligned flush with floor';
+  });
+  document.getElementById('ctx-scale-up').addEventListener('click', () => {
+    selectedObjects.forEach(obj => {
+      obj.scale.multiplyScalar(1.15);
+      if (obj.userData.componentId) propagateComponentChange(obj);
+    });
+  });
+  document.getElementById('ctx-scale-down').addEventListener('click', () => {
+    selectedObjects.forEach(obj => {
+      obj.scale.multiplyScalar(0.87);
+      if (obj.userData.componentId) propagateComponentChange(obj);
+    });
+  });
+  document.getElementById('ctx-del').addEventListener('click', () => {
+    selectedObjects.forEach(obj => {
+      if (obj.userData.componentId) detachFromComponent(obj);
+      const idx = objects.indexOf(obj);
+      if (idx > -1) objects.splice(idx, 1);
+      scene.remove(obj);
+    });
+    clearSelection();
+    hudText.textContent = 'Deleted selection';
+  });
+
+  // Export Scene to .GLB
+  document.getElementById('btn-export').addEventListener('click', () => {
+    const exporter = new THREE.GLTFExporter();
+    const exportGroup = new THREE.Group();
+    objects.forEach(obj => exportGroup.add(obj.clone()));
+    exporter.parse(exportGroup, (glb) => {
+      const blob = new Blob([glb], { type: 'model/gltf-binary' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Atelier3D-Interior.glb';
+      a.click();
+      URL.revokeObjectURL(url);
+      hudText.textContent = 'Exported Atelier3D-Interior.glb';
+    }, { binary: true });
+  });
+
+  document.getElementById('file-input').addEventListener('change', handleFileImport);
+}
+
+function toggleDrawer(id) {
+  const el = document.getElementById(id);
+  const wasOpen = el.classList.contains('open');
+  closeDrawers();
+  if (!wasOpen) el.classList.add('open');
+}
+
+function closeDrawers() {
+  document.querySelectorAll('.drawer').forEach(d => d.classList.remove('open'));
+}
+
+function searchWarehouse() {
+  const input = document.getElementById('wh-search');
+  const q = (input && input.value.trim()) ? input.value.trim() : 'interior furniture';
+  window.open(`https://3dwarehouse.sketchup.com/search?q=${encodeURIComponent(q)}&searchTab=model`, '_blank');
+}
+
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const reader = new FileReader();
+
+  hudText.textContent = `Importing ${file.name}...`;
+  closeDrawers();
+
+  if (ext === 'glb' || ext === 'gltf') {
+    reader.onload = (e) => {
+      const loader = new THREE.GLTFLoader();
+      loader.parse(e.target.result, '', (gltf) => integrateImportedModel(gltf.scene, file.name));
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (ext === 'obj') {
+    reader.onload = (e) => {
+      const loader = new THREE.OBJLoader();
+      integrateImportedModel(loader.parse(e.target.result), file.name);
+    };
+    reader.readAsText(file);
+  } else if (ext === 'stl') {
+    reader.onload = (e) => {
+      const loader = new THREE.STLLoader();
+      const geo = loader.parse(e.target.result);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xDFD7C8, roughness: 0.7 });
+      integrateImportedModel(new THREE.Mesh(geo, mat), file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  event.target.value = '';
+}
+
+function integrateImportedModel(root, filename) {
+  const wrapper = new THREE.Group();
+  wrapper.add(root);
+
+  const box = new THREE.Box3().setFromObject(wrapper);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  let scaleFactor = 1.0;
+  if (maxDim > 50) scaleFactor = 0.01;
+  else if (maxDim < 0.2) scaleFactor = 10.0;
+
+  root.position.sub(center);
+  root.position.y += size.y / 2;
+  wrapper.scale.setScalar(scaleFactor);
+  wrapper.userData = { isGroup: true, name: filename.replace(/\.[^/.]+$/, '') };
+
+  wrapper.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  scene.add(wrapper);
+  objects.push(wrapper);
+  selectObject(wrapper, false);
+  hudText.textContent = `Imported ${filename}`;
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
